@@ -1,0 +1,7 @@
+.vscode/
+main.exe
+main.exe.i64
+main.ilk
+main.obj
+main.pdb
+vc140.pdb
