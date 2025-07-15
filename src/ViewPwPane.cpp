@@ -1,14 +1,12 @@
 
-#include <iostream>
-#include <thread>
+#include "ViewPwPane.h"
 #include <chrono>
 #include <cstdlib>
-#include "ViewPwPane.h"
+#include <iostream>
+#include <thread>
 
-class ViewPasswordsPane : public PaneInterface {
-public:
-    void render() override {
-        std::string view_pw_art = R"(
+void ViewPwPane::render() {
+  std::string view_pw_art = R"(
 +============================================+
 |             STORED PASSWORDS               |
 +--------------------------------------------+
@@ -21,12 +19,11 @@ public:
 
 Waiting for command: 
 )";
-        std::cout << view_pw_art;
-    }
+  std::cout << view_pw_art;
+}
 
-    void handle_input(char c) override {
-        if (c == 'b') {
-            std::cout << "\n[INFO] Returning to Home Pane...\n";
-        }
-    }
-};
+void ViewPwPane::handle_input(char c) {
+  if (c == 'b') {
+    std::cout << "\n[INFO] Returning to Home Pane...\n";
+  }
+}

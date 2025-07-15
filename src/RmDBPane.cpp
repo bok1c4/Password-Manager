@@ -1,15 +1,13 @@
-#include <iostream>
-#include <thread>
+#include "RmDbPane.h"
 #include <chrono>
 #include <cstdlib>
-#include "RmDbPane.h"
+#include <iostream>
+#include <thread>
 
 using namespace std::chrono_literals;
 
-class RmDbPane : public PaneInterface {
-public:
-    void render() override {
-        std::string remove_db_art = R"(
+void RmDbPane::render() {
+  std::string remove_db_art = R"(
 +============================================+
 |            REMOVE DATABASE ENTRY           |
 +--------------------------------------------+
@@ -22,12 +20,11 @@ public:
 
 Waiting for command: 
 )";
-        std::cout << remove_db_art;
-    }
+  std::cout << remove_db_art;
+}
 
-    void handle_input(char c) override {
-        if (c == 'b') {
-            std::cout << "\n[INFO] Returning to Home Pane...\n";
-        }
-    }
-};
+void RmDbPane::handle_input(char c) {
+  if (c == 'b') {
+    std::cout << "\n[INFO] Returning to Home Pane...\n";
+  }
+}

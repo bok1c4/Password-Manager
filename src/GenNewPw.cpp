@@ -1,15 +1,13 @@
-#include <iostream>
-#include <thread>
+#include "GenNewPw.h"
 #include <chrono>
 #include <cstdlib>
-#include "GenNewPw.h"
+#include <iostream>
+#include <thread>
 
 using namespace std::chrono_literals;
 
-class GenNewPw : public PaneInterface {
-public:
-    void render() override {
-        std::string generate_pw_art = R"(
+void GenNewPw::render() {
+  std::string generate_pw_art = R"(
 +============================================+
 |           GENERATE NEW PASSWORD            |
 +--------------------------------------------+
@@ -24,12 +22,11 @@ public:
 
 Waiting for command: 
 )";
-        std::cout << generate_pw_art;
-    }
+  std::cout << generate_pw_art;
+}
 
-    void handle_input(char c) override {
-        if (c == 'b') {
-            std::cout << "\n[INFO] Returning to Home Pane...\n";
-        }
-    }
-};
+void GenNewPw::handle_input(char c) {
+  if (c == 'b') {
+    std::cout << "\n[INFO] Returning to Home Pane...\n";
+  }
+}

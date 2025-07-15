@@ -3,10 +3,10 @@
 
 #include "PaneInterface.h"
 
-class ViewPasswords : public PaneInterface {
+class ViewPwPane : public PaneInterface {
 public:
-    void render() override;
-    void handle_input(char c) override;
+  void render() override;
+  void handle_input(char c) override;
 };
 
 #endif
