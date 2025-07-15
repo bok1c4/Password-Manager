@@ -6,3 +6,5 @@ main.obj
 main.pdb
 vc140.pdb
 build/
+.cache/
+compile_commands.json
