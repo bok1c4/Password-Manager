@@ -1,31 +1,28 @@
-#include "GenNewPw.h"
+
+#include "password_view_screen.h"
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <thread>
 
-using namespace std::chrono_literals;
-
-void GenNewPw::render() {
-  std::string generate_pw_art = R"(
+void PasswordViewScreen::render() {
+  std::string view_pw_art = R"(
 +============================================+
-|           GENERATE NEW PASSWORD            |
+|             STORED PASSWORDS               |
 +--------------------------------------------+
-|  [Algorithm Used]: AES-256 Encryption      |
+|  [List of Saved Password Entries]          |
 |                                            |
-|  Enter New Password: ____________________  |
-|                                            |
-|  Optional Note: _________________________  |
+|  Use ID or keyword to view specific entry  |
 |                                            |
 |  [b] Back to Home                          |
 +============================================+
 
 Waiting for command: 
 )";
-  std::cout << generate_pw_art;
+  std::cout << view_pw_art;
 }
 
-void GenNewPw::handle_input(char c) {
+void PasswordViewScreen::handle_input(char c) {
   if (c == 'b') {
     std::cout << "\n[INFO] Returning to Home Pane...\n";
   }

@@ -1,14 +1,14 @@
 // src/HomePane.cpp
-#include <iostream>
-#include <thread>
+#include "main_menu_screen.h"
 #include <chrono>
 #include <cstdlib>
-#include "HomePane.h"
+#include <iostream>
+#include <thread>
 
 using namespace std::chrono_literals;
 
-void HomePane::render() {
-    std::string art = R"(
+void MainMenuScreen::render() {
+  std::string art = R"(
 +============================================+
 |         PASSWORD MANAGER CLI TOOL          |
 +--------------------------------------------+
@@ -21,13 +21,13 @@ void HomePane::render() {
 
 Waiting for command: 
 )";
-    std::cout << art;
+  std::cout << art;
 }
 
-void HomePane::handle_input(char c) {
-    if (c == 'q') {
-        std::cout << "\n[INFO] Exiting program...\n";
-        std::this_thread::sleep_for(2000ms);
-        exit(0);
-    }
+void MainMenuScreen::handle_input(char c) {
+  if (c == 'q') {
+    std::cout << "\n[INFO] Exiting program...\n";
+    std::this_thread::sleep_for(2000ms);
+    exit(0);
+  }
 }

@@ -5,11 +5,11 @@
 #include <thread>
 #include <unistd.h>
 
-#include "AddDbPane.h"
-#include "GenNewPw.h"
-#include "HomePane.h"
-#include "RmDbPane.h"
-#include "ViewPwPane.h"
+#include "add_database_screen.h"
+#include "main_menu_screen.h"
+#include "password_generation_screen.h"
+#include "password_view_screen.h"
+#include "remove_database_screen.h"
 
 using namespace std::chrono_literals;
 
@@ -41,11 +41,11 @@ int main() {
   // UTF-8 support generally already default in Linux terminal
   // system("chcp 65001 > nul"); <-- REMOVE
 
-  HomePane home;
-  GenNewPw gen;
-  ViewPwPane view;
-  AddDbPane add;
-  RmDbPane rm;
+  MainMenuScreen home;
+  PasswordGeneretionScreen gen;
+  PasswordViewScreen view;
+  AddDatabaseScreen add;
+  RemoveDatabaseScreen rm;
 
   PaneInterface *current = &home;
 
@@ -54,6 +54,8 @@ int main() {
     current->render();
 
     char key = getch();
+
+    std::cout << "Pressed: " << key << std::endl;
 
     switch (key) {
     case '1':
@@ -71,6 +73,10 @@ int main() {
     case 'b':
       current = &home;
       break;
+
+      // case in here for pw_gen panel?
+      // To change current rendering
+
     case 'q':
       std::cout << "\n[INFO] Quitting...\n";
       std::this_thread::sleep_for(1000ms);

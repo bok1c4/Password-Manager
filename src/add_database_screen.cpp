@@ -1,11 +1,11 @@
-#include <AddDbPane.h>
+#include "add_database_screen.h"
 #include <chrono>
 #include <iostream>
 #include <thread>
 
 using namespace std::chrono_literals;
 
-void AddDbPane::render() {
+void AddDatabaseScreen::render() {
   std::string add_db_art = R"(
 +============================================+
 |              ADD DATABASE FILE             |
@@ -22,8 +22,9 @@ Waiting for command:
   std::cout << add_db_art;
 }
 
-void AddDbPane ::handle_input(char c) {
+void AddDatabaseScreen::handle_input(char c) {
   if (c == 'b') {
     std::cout << "\n[INFO] Returning to Home Pane...\n";
+    // Possibly trigger navigation here in real application
   }
-};
+}

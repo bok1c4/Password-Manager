@@ -1,4 +1,4 @@
-#include "RmDbPane.h"
+#include "remove_database_screen.h"
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -6,7 +6,7 @@
 
 using namespace std::chrono_literals;
 
-void RmDbPane::render() {
+void RemoveDatabaseScreen::render() {
   std::string remove_db_art = R"(
 +============================================+
 |            REMOVE DATABASE ENTRY           |
@@ -23,7 +23,7 @@ Waiting for command:
   std::cout << remove_db_art;
 }
 
-void RmDbPane::handle_input(char c) {
+void RemoveDatabaseScreen::handle_input(char c) {
   if (c == 'b') {
     std::cout << "\n[INFO] Returning to Home Pane...\n";
   }
