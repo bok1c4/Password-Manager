@@ -38,11 +38,9 @@ char getch() {
 void clear_screen() { std::cout << "\033[2J\033[1;1H"; }
 
 int main() {
-  // UTF-8 support generally already default in Linux terminal
-  // system("chcp 65001 > nul"); <-- REMOVE
 
   MainMenuScreen home;
-  PasswordGeneretionScreen gen;
+  PasswordGenerationScreen gen;
   PasswordViewScreen view;
   AddDatabaseScreen add;
   RemoveDatabaseScreen rm;

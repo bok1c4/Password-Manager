@@ -6,7 +6,7 @@
 
 using namespace std::chrono_literals;
 
-void PasswordGeneretionScreen::render() {
+void PasswordGenerationScreen::render() {
   std::string generate_pw_art = R"(
 +============================================+
 |           GENERATE NEW PASSWORD            |
@@ -25,7 +25,7 @@ Waiting for command:
   std::cout << generate_pw_art;
 }
 
-void PasswordGeneretionScreen::handle_input(char c) {
+void PasswordGenerationScreen::handle_input(char c) {
 
   // switch case
   // and redirecting to other panes
