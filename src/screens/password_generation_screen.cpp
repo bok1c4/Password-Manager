@@ -1,4 +1,6 @@
-#include "password_generation_screen.h"
+#include "./screens/password_generation_screen.h"
+#include "./screens/password_input_screen.h"
+#include "./screens/screen_manager.h"
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -25,12 +27,18 @@ Waiting for command:
   std::cout << generate_pw_art;
 }
 
-void PasswordGenerationScreen::handle_input(char c) {
-
-  // switch case
-  // and redirecting to other panes
-
-  if (c == 'b') {
+void PasswordGenerationScreen::handle_input(char key) {
+  switch (key) {
+  case 'p':
+    manager_->push(std::make_unique<PasswordInputScreen>(manager_));
+    break;
+  case 'n':
+    break;
+  case '\t':
+    break;
+  case 'b':
     std::cout << "\n[INFO] Returning to Home Pane...\n";
+    manager_->pop(); // or replace if needed
+    break;
   }
 }

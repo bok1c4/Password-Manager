@@ -1,21 +1,21 @@
-This project should be written with C++ or Go
+✅ High-Level Architecture & Strategy
 
-It should be ASCII rendered CLI Tool that helps with managing passwords.
+To achieve this flow, we’ll introduce:
 
-Providing the ability for encyrpting the passwords, linking the password with notes or some URL,
-and storing the passwords in the database.
+1. Screen Navigation Stack
 
-Compiled into .exe and runned in newly created terminal.
+   Keep track of the current screen (already done)
 
-===========================
-   Password Manager CLI   
-===========================
+   Add support for pushing/popping screens to enable multi-step flows (like entering and confirming a password)
 
-[1] Create New Password
-[2] Load All Passwords
-[3] Load Password by ID
-[4] Add Database
-[5] Remove Database
-[0] Exit
+2. Input Focus Management
 
-Select an option: _
+   Use a focus_index to track which UI element is "selected" (like input field vs back button)
+
+   Use <TAB> to cycle focus, <ENTER> to activate the focused item
+
+3. OOP Design for Screens
+
+   Each screen inherits from PaneInterface
+
+   Screens can render state, handle input, and request navigation changes (e.g., push another screen)
