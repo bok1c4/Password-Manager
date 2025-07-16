@@ -9,6 +9,9 @@
 
 using namespace std::chrono_literals;
 
+PasswordGenerationScreen::PasswordGenerationScreen(ScreenManager *manager)
+    : manager_(manager) {}
+
 void PasswordGenerationScreen::render() {
   std::string generate_pw_art = R"(
 +============================================+
@@ -16,9 +19,7 @@ void PasswordGenerationScreen::render() {
 +--------------------------------------------+
 |  [Algorithm Used]: AES-256 Encryption      |
 |                                            |
-|  g) Generate New Password                  |
-|                                            |
-|  n) Note for Password: ___________________ |
+|   g) Generate New Password                 |
 |                                            |
 | [b] hack to Home                           |
 +============================================+
@@ -33,10 +34,6 @@ void PasswordGenerationScreen::handle_input(char key) {
     // implement password generation
   case 'g':
     manager_->push(std::make_unique<PasswordGeneratedScreen>(manager_));
-    break;
-    break;
-  case 'n':
-    manager_->push(std::make_unique<NoteInputScreen>(manager_));
     break;
   case '\t':
     break;

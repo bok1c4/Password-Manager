@@ -7,8 +7,4 @@ NoteInputScreen::NoteInputScreen(ScreenManager *manager)
 
 void NoteInputScreen::render() {}
 
-void NoteInputScreen::handle_input(char key) {
-  std::cout << key << std::endl;
-  // handle:
-  // p, n, tab
-}
+void NoteInputScreen::handle_input(char key) { std::cout << key << std::endl; }

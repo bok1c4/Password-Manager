@@ -1,15 +1,17 @@
-#ifndef PASSWORD_GENERETION_H
-#define PASSWORD_GENERETION_H
+#ifndef PASSWORD_GENERATION_SCREEN_H
+#define PASSWORD_GENERATION_SCREEN_H
 
 #include "screen_interface.h"
+#include <memory>
+
 class ScreenManager;
 
 class PasswordGenerationScreen : public PaneInterface {
 public:
-  PasswordGenerationScreen(ScreenManager *manager) : manager_(manager) {}
+  explicit PasswordGenerationScreen(ScreenManager *manager);
 
   void render() override;
-  void handle_input(char c) override;
+  void handle_input(char key) override;
 
 private:
   ScreenManager *manager_;
