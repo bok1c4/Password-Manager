@@ -57,7 +57,12 @@ void PasswordGeneratedScreen::handle_input(char key) {
     break;
 
   case 'n':
-    manager_->push(std::make_unique<NoteInputScreen>(manager_));
+
+    // NoteInputScreen needs to have access to password
+    // so when note is provided it can be saved in the database
+    // Also later NoteInputScreen should also be provided with db connection to
+    // run sql scripts
+    manager_->push(std::make_unique<NoteInputScreen>(manager_, password));
     break;
 
   default:

@@ -16,17 +16,16 @@ int main() {
   screen_manager.push(std::make_unique<MainMenuScreen>(&screen_manager));
 
   while (!screen_manager.empty()) {
-    clear_screen();
-
     PaneInterface *current = screen_manager.current();
     if (!current)
       break;
 
     current->render();
     char key = getch();
-    std::cout << "Command pressed: " << key << std::endl;
     current->handle_input(key);
-    std::this_thread::sleep_for(500ms);
+
+    // std::this_thread::sleep_for(500ms);
+    clear_screen();
   }
 
   std::cout << "\n[INFO] Quitting...\n";

@@ -7,15 +7,16 @@
 
 class NoteInputScreen : public PaneInterface {
 public:
-  NoteInputScreen(ScreenManager *current);
+  NoteInputScreen(ScreenManager *manager, const std::string &password);
+
   void render() override;
   void handle_input(char input) override;
 
 private:
   ScreenManager *manager_;
   PaneInterface *current;
-  std::string password_input_;
-  int focus_index_; // 0: input field, 1: back button
+  std::string password_;
+  std::string note_;
 };
 
 #endif // !DEBUG

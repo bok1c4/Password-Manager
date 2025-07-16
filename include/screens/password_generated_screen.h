@@ -14,7 +14,7 @@ public:
   void handle_input(char key) override;
 
 private:
-  std::string generate_random_string(const size_t length = 12);
+  std::string generate_random_string(const size_t length = 16);
   std::string password;
 
   ScreenManager *manager_;
