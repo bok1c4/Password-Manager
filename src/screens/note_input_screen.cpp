@@ -26,7 +26,8 @@ void NoteInputScreen::render() {
 }
 
 void NoteInputScreen::handle_input(char key) {
-  if (key == 27) { // ESC key
+  // ESC to cancel and go back
+  if (key == 27) {
     std::cout << "\n[INFO] Going back to password screen...\n";
     manager_->pop();
     return;
@@ -37,7 +38,6 @@ void NoteInputScreen::handle_input(char key) {
     std::cout << "[DEBUG] Password: " << password_ << "\n";
     std::cout << "[DEBUG] Note: " << note_ << "\n";
 
-    // Countdown (8 seconds)
     for (int i = 6; i >= 1; --i) {
       std::cout << "\rProceeding to save the credentials in database in " << i
                 << "... " << std::flush;
@@ -48,21 +48,29 @@ void NoteInputScreen::handle_input(char key) {
     std::cout << "Press Return (Enter) to confirm saving, or ESC to go back: "
               << std::flush;
 
-    char confirm_key = getch();
+    char confirm_key = getch(); // Blocking key read
 
     if (confirm_key == '\n' || confirm_key == '\r') {
       std::cout << "\n[INFO] Credentials confirmed and saved successfully!\n";
-      // TODO: Insert into DB or file here
-      manager_->pop(); // Proceed after saving
+      // TODO: Save password_ + note_ to DB
+      manager_->pop();
     } else if (confirm_key == 27) {
       std::cout
           << "\n[INFO] Operation cancelled. Returning to previous screen.\n";
       manager_->pop();
     } else {
       std::cout << "\n[WARNING] Unknown input. Returning to previous screen.\n";
-      manager_->pop(); // Fallback behavior
+      manager_->pop();
     }
 
+    return;
+  }
+
+  // Backspace support
+  if (key == 8 || key == 127) {
+    if (!note_.empty()) {
+      note_.pop_back();
+    }
     return;
   }
 
