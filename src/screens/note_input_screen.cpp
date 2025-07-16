@@ -1,4 +1,5 @@
 #include "screens/note_input_screen.h"
+#include "../utils/db_utils.h"
 #include "../utils/terminal_utils.h"
 #include "screens/screen_manager.h"
 
@@ -52,7 +53,7 @@ void NoteInputScreen::handle_input(char key) {
 
     if (confirm_key == '\n' || confirm_key == '\r') {
       std::cout << "\n[INFO] Credentials confirmed and saved successfully!\n";
-      // TODO: Save password_ + note_ to DB
+      save_to_db(password_, note_);
       manager_->pop();
     } else if (confirm_key == 27) {
       std::cout
