@@ -1,9 +1,9 @@
-#include "./screens/main_menu_screen.h"
-#include "./screens/add_database_screen.h"
-#include "./screens/password_generation_screen.h"
-#include "./screens/password_view_screen.h"
-#include "./screens/remove_database_screen.h"
-#include "./screens/screen_manager.h"
+#include "screens/main_menu_screen.h"
+#include "screens/add_database_screen.h"
+#include "screens/password_generation_screen.h"
+#include "screens/password_view_screen.h"
+#include "screens/remove_database_screen.h"
+#include "screens/screen_manager.h"
 
 #include <iostream>
 #include <memory>

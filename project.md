@@ -1,3 +1,6 @@
+MASTER PASSWORD FOR REMEMBERING THE DATABASE
+WHICH IS USED AS MASTER KEY FOR DECRYPTING DATA (**ON ROOT LEVEL?**)
+
 ✅ High-Level Architecture & Strategy
 
 To achieve this flow, we’ll introduce:

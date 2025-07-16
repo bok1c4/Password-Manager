@@ -1,4 +1,4 @@
-#include "./screens/add_database_screen.h"
+#include "screens/add_database_screen.h"
 #include "screens/screen_manager.h"
 #include <chrono>
 #include <iostream>

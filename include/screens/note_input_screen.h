@@ -2,12 +2,12 @@
 #include "./screens/screen_manager.h"
 #include <ostream>
 #include <string>
-#ifndef PASSWORD_INPUT_SCREEN_H
-#define PASSWORD_INPUT_SCREEN_H()
+#ifndef NOTE_INPUT_SCREEN_H
+#define NOTE_INPUT_SCREEN_H()
 
-class PasswordInputScreen : public PaneInterface {
+class NoteInputScreen : public PaneInterface {
 public:
-  PasswordInputScreen(ScreenManager *current);
+  NoteInputScreen(ScreenManager *current);
   void render() override;
   void handle_input(char input) override;
 

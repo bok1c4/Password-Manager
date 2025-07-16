@@ -1,32 +1,32 @@
-#include "screens/remove_database_screen.h"
+
+#include "screens/password_generated_screen.h"
 #include "screens/screen_manager.h"
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 
-using namespace std::chrono_literals;
-
-RemoveDatabaseScreen::RemoveDatabaseScreen(ScreenManager *manager)
+PasswordGeneratedScreen::PasswordGeneratedScreen(ScreenManager *manager)
     : manager_(manager) {};
 
-void RemoveDatabaseScreen::render() {
-  std::string remove_db_art = R"(
+void PasswordGeneratedScreen::render() {
+  std::string view_pw_art = R"(
 +============================================+
-|            REMOVE DATABASE ENTRY           |
+|   PASSWORD GENERATION SCREEN               |
 +--------------------------------------------+
-|  DB File/ID to Remove: _________________   |
+|  [List of Saved Password Entries]          |
 |                                            |
-|  WARNING: This will delete all contents    |
+|  Use ID or keyword to view specific entry  |
 |                                            |
 |  [b] Back to Home                          |
 +============================================+
 
 Waiting for command: 
 )";
-  std::cout << remove_db_art;
+  std::cout << view_pw_art;
 }
 
-void RemoveDatabaseScreen::handle_input(char key) {
+void PasswordGeneratedScreen::handle_input(char key) {
   if (key == 'b') {
     manager_->pop();
     std::cout << "\n[INFO] Returning to Home Pane...\n";

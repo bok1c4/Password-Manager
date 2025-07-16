@@ -1,6 +1,7 @@
-#include "./screens/password_generation_screen.h"
-#include "./screens/password_input_screen.h"
-#include "./screens/screen_manager.h"
+#include "screens/password_generation_screen.h"
+#include "screens/note_input_screen.h"
+#include "screens/password_generated_screen.h"
+#include "screens/screen_manager.h"
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -15,9 +16,9 @@ void PasswordGenerationScreen::render() {
 +--------------------------------------------+
 |  [Algorithm Used]: AES-256 Encryption      |
 |                                            |
-|  p) Enter New Password: __________________ |
+|  g) Generate New Password                  |
 |                                            |
-|  n) Optional Note: _______________________ |
+|  n) Note for Password: ___________________ |
 |                                            |
 | [b] hack to Home                           |
 +============================================+
@@ -29,10 +30,13 @@ Waiting for command:
 
 void PasswordGenerationScreen::handle_input(char key) {
   switch (key) {
-  case 'p':
-    manager_->push(std::make_unique<PasswordInputScreen>(manager_));
+    // implement password generation
+  case 'g':
+    manager_->push(std::make_unique<PasswordGeneratedScreen>(manager_));
+    break;
     break;
   case 'n':
+    manager_->push(std::make_unique<NoteInputScreen>(manager_));
     break;
   case '\t':
     break;

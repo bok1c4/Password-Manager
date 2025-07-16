@@ -1,5 +1,5 @@
 
-#include "./screens/password_view_screen.h"
+#include "screens/password_view_screen.h"
 #include "screens/screen_manager.h"
 #include <chrono>
 #include <cstdlib>
