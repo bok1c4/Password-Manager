@@ -3,6 +3,7 @@
 #include "../utils/terminal_utils.h"
 #include "screens/screen_manager.h"
 
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -27,8 +28,7 @@ void NoteInputScreen::render() {
 }
 
 void NoteInputScreen::handle_input(char key) {
-  // ESC to cancel and go back
-  if (key == 27) {
+  if (key == 27) { // ESC key
     std::cout << "\n[INFO] Going back to password screen...\n";
     manager_->pop();
     return;
@@ -49,11 +49,24 @@ void NoteInputScreen::handle_input(char key) {
     std::cout << "Press Return (Enter) to confirm saving, or ESC to go back: "
               << std::flush;
 
-    char confirm_key = getch(); // Blocking key read
+    char confirm_key = getch();
 
     if (confirm_key == '\n' || confirm_key == '\r') {
-      std::cout << "\n[INFO] Credentials confirmed and saved successfully!\n";
-      save_to_db(password_, note_);
+      bool isSaved = save_to_db(password_, note_);
+      if (isSaved) {
+        std::cout << "\n[INFO] Credentials confirmed and saved successfully!\n";
+      } else {
+        std::cerr << "\n[ERROR] Failed to save credentials to the database.\n";
+
+        // Log error info to file for debugging
+        std::ofstream log("db_errors.log", std::ios::app);
+        if (log.is_open()) {
+          log << "[ERROR] Failed to save note for password: " << password_
+              << "\n";
+          log.close();
+        }
+      }
+
       manager_->pop();
     } else if (confirm_key == 27) {
       std::cout
@@ -67,7 +80,7 @@ void NoteInputScreen::handle_input(char key) {
     return;
   }
 
-  // Backspace support
+  // Backspace handling
   if (key == 8 || key == 127) {
     if (!note_.empty()) {
       note_.pop_back();
@@ -75,5 +88,6 @@ void NoteInputScreen::handle_input(char key) {
     return;
   }
 
+  // Accept character input or pasted text
   note_ += key;
 }

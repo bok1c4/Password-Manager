@@ -4,7 +4,7 @@
 
 bool save_to_db(const std::string &password, const std::string &note) {
   try {
-    pqxx::connection conn("host=192.168.1.138 port=5432 dbname=mydb "
+    pqxx::connection conn("host=192.168.100.138 port=5432 dbname=mydb "
                           "user=dbuser password=temp123");
 
     if (!conn.is_open()) {
