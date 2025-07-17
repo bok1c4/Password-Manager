@@ -22,8 +22,8 @@ void MainMenuScreen::render() {
 +--------------------------------------------+
 |  [1] Generate New Password                 |
 |  [2] View Stored Passwords                 |
-|  [3] Add Database                          |
-|  [4] Remove Database                       |
+|  [3] Manage Database                       |
+|  [4] Key Sharing & Encryption Setup        |
 |  [q] Quit                                  |
 +============================================+
 

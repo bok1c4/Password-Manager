@@ -30,10 +30,7 @@ void NoteInputScreen::render() {
 }
 
 void NoteInputScreen::handle_input(std::string key) {
-  // Handle ESC input (ASCII 27) typed as string — unlikely, but you can map
-  // "ESC" as a string
-  if (key ==
-      "ESC") { // Optional: you'd have to map this manually in getch-based logic
+  if (key == "ESC") {
     std::cout << "\n[INFO] Going back to password screen...\n";
     manager_->pop();
     return;
@@ -55,9 +52,13 @@ void NoteInputScreen::handle_input(std::string key) {
     std::cout << "Press Return (Enter) to confirm saving, or ESC to go back: "
               << std::flush;
 
-    char confirm_key = getch(); // Here you can keep getch() for key press
-
+    char confirm_key = getch();
     if (confirm_key == '\n' || confirm_key == '\r') {
+
+      // i need to encrypt the password before proceeding to saving it
+      // note should not be encrypted, note is used as reference to pw
+      // for user (where user used the password)
+
       bool isSaved = save_to_db(password_, note_);
       if (isSaved) {
         std::cout << "\n[INFO] Credentials confirmed and saved successfully!\n";
