@@ -26,8 +26,8 @@ Waiting for command:
   std::cout << remove_db_art;
 }
 
-void RemoveDatabaseScreen::handle_input(char key) {
-  if (key == 'b') {
+void RemoveDatabaseScreen::handle_input(std::string key) {
+  if (key == "b") {
     manager_->pop();
     std::cout << "\n[INFO] Returning to Home Pane...\n";
   }

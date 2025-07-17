@@ -23,8 +23,10 @@ int main() {
       break;
 
     current->render();
-    char key = getch();
-    current->handle_input(key);
+
+    std::string input;
+    std::getline(std::cin, input);
+    current->handle_input(input);
 
     clear_screen();
   }

@@ -8,7 +8,7 @@ class PasswordViewScreen : public PaneInterface {
 public:
   PasswordViewScreen(ScreenManager *manager);
   void render() override;
-  void handle_input(char c) override;
+  void handle_input(std::string key) override;
 
 private:
   ScreenManager *manager_;

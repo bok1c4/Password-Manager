@@ -8,7 +8,7 @@ class AddDatabaseScreen : public PaneInterface {
 public:
   AddDatabaseScreen(ScreenManager *manager);
   void render() override;
-  void handle_input(char c) override;
+  void handle_input(std::string) override;
 
 private:
   ScreenManager *manager_;

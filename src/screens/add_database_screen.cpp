@@ -26,8 +26,8 @@ Waiting for command:
   std::cout << add_db_art;
 }
 
-void AddDatabaseScreen::handle_input(char key) {
-  if (key == 'b') {
+void AddDatabaseScreen::handle_input(std::string key) {
+  if (key == "b") {
     std::cout << "\n[INFO] Returning to Home Pane...\n";
     manager_->pop();
   }

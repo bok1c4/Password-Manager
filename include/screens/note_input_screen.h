@@ -1,6 +1,5 @@
 #include "./screens/screen_interface.h"
 #include "./screens/screen_manager.h"
-#include <ostream>
 #include <string>
 #ifndef NOTE_INPUT_SCREEN_H
 #define NOTE_INPUT_SCREEN_H()
@@ -10,7 +9,7 @@ public:
   NoteInputScreen(ScreenManager *manager, const std::string &password);
 
   void render() override;
-  void handle_input(char input) override;
+  void handle_input(std::string input) override;
 
 private:
   ScreenManager *manager_;

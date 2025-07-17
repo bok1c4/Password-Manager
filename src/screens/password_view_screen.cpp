@@ -31,18 +31,16 @@ void PasswordViewScreen::render() {
   std::cout << "Waiting for command: ";
 }
 
-void PasswordViewScreen::handle_input(char key) {
-  if (key == 'b' || key == 'B') {
+void PasswordViewScreen::handle_input(std::string input) {
+  if (input == "b" || input == "B") {
     std::cout << "\n[INFO] Returning to Home Pane...\n";
     manager_->pop();
     return;
   }
 
-  // Interpret numeric input for ID
-  if (std::isdigit(key)) {
-    std::cin.putback(key);
-    int id;
-    std::cin >> id;
+  try {
+    int id = std::stoi(input); // Convert full string to int
+    std::cout << "Pressed ID: " << id << "\n";
 
     auto [pw, note] = get_password_by_note_id(id);
 
@@ -57,11 +55,12 @@ void PasswordViewScreen::handle_input(char key) {
     } else {
       std::cout << "\n[WARNING] No entry found for ID " << id << "\n";
     }
-
-    std::cout << "Press any key to go back...";
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    std::cin.get();
-
-    manager_->pop(); // Go back after viewing
+  } catch (const std::exception &e) {
+    std::cout << "\n[ERROR] Invalid input. Please enter a numeric ID or 'b' to "
+                 "go back.\n";
   }
+
+  std::cout << "Press any key to go back...";
+  std::cin.get();
+  manager_->pop();
 }

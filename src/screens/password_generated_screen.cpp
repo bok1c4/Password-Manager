@@ -8,6 +8,8 @@
 #include <random>
 #include <sstream>
 
+using std::string;
+
 PasswordGeneratedScreen::PasswordGeneratedScreen(ScreenManager *manager)
     : password(generate_random_string()), manager_(manager) {}
 
@@ -49,23 +51,15 @@ void PasswordGeneratedScreen::render() {
   std::cout << view_pw_art;
 }
 
-void PasswordGeneratedScreen::handle_input(char key) {
-  switch (key) {
-  case 'b':
+void PasswordGeneratedScreen::handle_input(std::string key) {
+  if (key == "b" || key == "B") {
     manager_->pop();
     std::cout << "\n[INFO] Returning to Home Pane...\n";
-    break;
-
-  case 'n':
-
-    // NoteInputScreen needs to have access to password
-    // so when note is provided it can be saved in the database
-    // Also later NoteInputScreen should also be provided with db connection to
-    // run sql scripts
+  } else if (key == "n" || key == "N") {
+    // Provide the password to NoteInputScreen for later saving
     manager_->push(std::make_unique<NoteInputScreen>(manager_, password));
-    break;
-
-  default:
-    break;
+  } else {
+    std::cout << "[WARNING] Invalid command. Press 'b' to go back or 'n' to "
+                 "add a note.\n";
   }
 }

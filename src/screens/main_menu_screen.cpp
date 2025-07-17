@@ -9,6 +9,8 @@
 #include <memory>
 #include <thread>
 
+using std::string;
+
 using namespace std::chrono_literals;
 
 MainMenuScreen::MainMenuScreen(ScreenManager *manager) : manager_(manager) {}
@@ -30,25 +32,20 @@ Waiting for command:
   std::cout << art;
 }
 
-void MainMenuScreen::handle_input(char key) {
-  switch (key) {
-  case '1':
+void MainMenuScreen::handle_input(std::string key) {
+  if (key == "1") {
     manager_->push(std::make_unique<PasswordGenerationScreen>(manager_));
-    break;
-  case '2':
+  } else if (key == "2") {
     manager_->push(std::make_unique<PasswordViewScreen>(manager_));
-    break;
-  case '3':
+  } else if (key == "3") {
     manager_->push(std::make_unique<AddDatabaseScreen>(manager_));
-    break;
-  case '4':
+  } else if (key == "4") {
     manager_->push(std::make_unique<RemoveDatabaseScreen>(manager_));
-    break;
-  case 'q':
+  } else if (key == "q" || key == "Q") {
     std::cout << "\n[INFO] Exiting program...\n";
     std::this_thread::sleep_for(2000ms);
     exit(0);
-  default:
-    break;
+  } else {
+    std::cout << "\n[WARNING] Invalid input. Please choose a valid option.\n";
   }
 }

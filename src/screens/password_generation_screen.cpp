@@ -29,17 +29,16 @@ Waiting for command:
   std::cout << generate_pw_art;
 }
 
-void PasswordGenerationScreen::handle_input(char key) {
-  switch (key) {
-    // implement password generation
-  case 'g':
+void PasswordGenerationScreen::handle_input(std::string key) {
+  if (key == "g" || key == "G") {
     manager_->push(std::make_unique<PasswordGeneratedScreen>(manager_));
-    break;
-  case '\t':
-    break;
-  case 'b':
+  } else if (key == "\t") {
+    // You can handle tab if needed
+  } else if (key == "b" || key == "B") {
     std::cout << "\n[INFO] Returning to Home Pane...\n";
-    manager_->pop(); // or replace if needed
-    break;
+    manager_->pop();
+  } else {
+    std::cout << "[WARNING] Invalid command. Press 'g' to generate, 'b' to go "
+                 "back.\n";
   }
 }

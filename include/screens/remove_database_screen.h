@@ -8,7 +8,7 @@ class RemoveDatabaseScreen : public PaneInterface {
 public:
   RemoveDatabaseScreen(ScreenManager *manager);
   void render() override;
-  void handle_input(char c) override;
+  void handle_input(std::string input) override;
 
 private:
   ScreenManager *manager_;

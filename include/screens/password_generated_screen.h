@@ -11,7 +11,7 @@ public:
   explicit PasswordGeneratedScreen(ScreenManager *manager);
 
   void render() override;
-  void handle_input(char key) override;
+  void handle_input(std::string key) override;
 
 private:
   std::string generate_random_string(const size_t length = 16);

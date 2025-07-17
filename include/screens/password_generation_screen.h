@@ -11,7 +11,7 @@ public:
   explicit PasswordGenerationScreen(ScreenManager *manager);
 
   void render() override;
-  void handle_input(char key) override;
+  void handle_input(std::string input) override;
 
 private:
   ScreenManager *manager_;

@@ -8,6 +8,8 @@
 #include <string>
 #include <thread>
 
+using std::string;
+
 using namespace std::chrono_literals;
 
 NoteInputScreen::NoteInputScreen(ScreenManager *manager,
@@ -27,14 +29,18 @@ void NoteInputScreen::render() {
   std::cout << "\nWaiting for input: ";
 }
 
-void NoteInputScreen::handle_input(char key) {
-  if (key == 27) { // ESC key
+void NoteInputScreen::handle_input(std::string key) {
+  // Handle ESC input (ASCII 27) typed as string — unlikely, but you can map
+  // "ESC" as a string
+  if (key ==
+      "ESC") { // Optional: you'd have to map this manually in getch-based logic
     std::cout << "\n[INFO] Going back to password screen...\n";
     manager_->pop();
     return;
   }
 
-  if (key == '\n' || key == '\r') {
+  // Handle Enter (user presses enter, so input is empty string)
+  if (key.empty()) {
     std::cout << "\n[INFO] Note saved for password.\n";
     std::cout << "[DEBUG] Password: " << password_ << "\n";
     std::cout << "[DEBUG] Note: " << note_ << "\n";
@@ -49,7 +55,7 @@ void NoteInputScreen::handle_input(char key) {
     std::cout << "Press Return (Enter) to confirm saving, or ESC to go back: "
               << std::flush;
 
-    char confirm_key = getch();
+    char confirm_key = getch(); // Here you can keep getch() for key press
 
     if (confirm_key == '\n' || confirm_key == '\r') {
       bool isSaved = save_to_db(password_, note_);
@@ -58,7 +64,6 @@ void NoteInputScreen::handle_input(char key) {
       } else {
         std::cerr << "\n[ERROR] Failed to save credentials to the database.\n";
 
-        // Log error info to file for debugging
         std::ofstream log("db_errors.log", std::ios::app);
         if (log.is_open()) {
           log << "[ERROR] Failed to save note for password: " << password_
@@ -66,9 +71,8 @@ void NoteInputScreen::handle_input(char key) {
           log.close();
         }
       }
-
       manager_->pop();
-    } else if (confirm_key == 27) {
+    } else if (confirm_key == 27) { // ESC
       std::cout
           << "\n[INFO] Operation cancelled. Returning to previous screen.\n";
       manager_->pop();
@@ -76,18 +80,17 @@ void NoteInputScreen::handle_input(char key) {
       std::cout << "\n[WARNING] Unknown input. Returning to previous screen.\n";
       manager_->pop();
     }
-
     return;
   }
 
-  // Backspace handling
-  if (key == 8 || key == 127) {
+  // Handle Backspace
+  if (key == "\b" || key[0] == 127 || key[0] == 8) {
     if (!note_.empty()) {
       note_.pop_back();
     }
     return;
   }
 
-  // Accept character input or pasted text
+  // Accept character input
   note_ += key;
 }
