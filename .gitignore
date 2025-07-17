@@ -7,4 +7,7 @@ main.pdb
 vc140.pdb
 build/
 .cache/
+.env
+./include/dotenv-cpp/build/
 compile_commands.json
+

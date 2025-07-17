@@ -1,12 +1,36 @@
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <pqxx/pqxx>
+#include <vector>
+
+std::string get_env_var(const char *name) {
+  const char *value = std::getenv(name);
+  if (!value) {
+    std::cerr << "[ERROR] Missing environment variable: " << name << "\n";
+    throw std::runtime_error("Missing environment variable");
+  }
+  return std::string(value);
+}
+
+// Assemble the connection string from environment
+std::string get_connection_string() {
+  try {
+    return "host=" + get_env_var("DB_HOST") +
+           " port=" + get_env_var("DB_PORT") +
+           " dbname=" + get_env_var("DB_NAME") +
+           " user=" + get_env_var("DB_USER") +
+           " password=" + get_env_var("DB_PASSWORD");
+  } catch (const std::exception &e) {
+    std::cerr << "[FATAL] Could not build DB connection string: " << e.what()
+              << "\n";
+    throw;
+  }
+}
 
 bool save_to_db(const std::string &password, const std::string &note) {
   try {
-    pqxx::connection conn("host=192.168.100.138 port=5432 dbname=mydb "
-                          "user=dbuser password=temp123");
-
+    pqxx::connection conn(get_connection_string());
     if (!conn.is_open()) {
       std::cerr << "[ERROR] Failed to connect to database.\n";
       return false;
@@ -19,15 +43,12 @@ bool save_to_db(const std::string &password, const std::string &note) {
 
     std::cout << "[INFO] Password saved to database.\n";
     return true;
-
   } catch (const std::exception &e) {
     std::cerr << "[ERROR] DB exception: " << e.what() << "\n";
-
     std::ofstream log_file("db_errors.log", std::ios::app);
     if (log_file.is_open()) {
       log_file << "[ERROR] Failed to save to DB: " << e.what() << "\n";
     }
-
     return false;
   }
 }
@@ -36,8 +57,7 @@ std::vector<std::pair<int, std::string>> get_all_password_notes() {
   std::vector<std::pair<int, std::string>> results;
 
   try {
-    pqxx::connection conn("host=192.168.100.138 port=5432 dbname=mydb "
-                          "user=dbuser password=temp123");
+    pqxx::connection conn(get_connection_string());
     pqxx::work txn(conn);
 
     pqxx::result r =
@@ -45,8 +65,8 @@ std::vector<std::pair<int, std::string>> get_all_password_notes() {
 
     for (const auto &row : r) {
       int id = row[0].as<int>();
-      std::string pw = row[1].as<std::string>();
-      results.emplace_back(id, pw);
+      std::string note = row[1].as<std::string>();
+      results.emplace_back(id, note);
     }
 
     txn.commit();
@@ -59,8 +79,7 @@ std::vector<std::pair<int, std::string>> get_all_password_notes() {
 
 std::pair<std::string, std::string> get_password_by_note_id(int id) {
   try {
-    pqxx::connection conn("host=192.168.100.138 port=5432 dbname=mydb "
-                          "user=dbuser password=temp123");
+    pqxx::connection conn(get_connection_string());
     pqxx::work txn(conn);
 
     pqxx::result r = txn.exec_params(
