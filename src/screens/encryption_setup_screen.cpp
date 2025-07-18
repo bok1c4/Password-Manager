@@ -7,9 +7,6 @@
 #include <iostream>
 #include <thread>
 
-using std::cerr;
-using std::cout;
-
 using namespace std::chrono_literals;
 
 EncryptionSetupScreen::EncryptionSetupScreen(ScreenManager *manager,
@@ -22,17 +19,17 @@ void EncryptionSetupScreen::render() {
 |              ENCRYPTION SETUP              |
 +--------------------------------------------+
 |                                            |
-|  Current Private Key Path:                  
-|    )" + config_->privateKey.path +
+|  Current Private Key Loaded:                  
+|    )" + config_->privateKey.username +
                     R"(        
 |                                            
-|  Current Public Keys Paths:                | 
+|  Current Public Keys Loaded:                | 
 )";
 
   std::cout << art;
 
   for (const auto &pubKey : config_->publicKeys) {
-    std::cout << "    - " << pubKey.path << "\n";
+    std::cout << "    - " << pubKey.username << "\n";
   }
 
   std::cout << R"(
@@ -66,18 +63,31 @@ void EncryptionSetupScreen::handle_input(std::string key) {
 
     config_->privateKey = {newPrivPath, machineName};
 
+    // Try to match username from existing public keys based on private key
+    auto maybeUsername = Encryptor::match_username_from_public_keys(
+        newPrivPath, config_->publicKeys);
+    if (maybeUsername.has_value()) {
+      std::cout << "[INFO] Private key matches public key username: "
+                << maybeUsername.value() << "\n";
+      // Override username with matched username for consistency
+      config_->privateKey.username = maybeUsername.value();
+    } else {
+      std::cout
+          << "[INFO] No matching public key found for this private key.\n";
+    }
+
     ConfigManager configManager("config.json");
     if (!configManager.load()) {
       std::cerr << "[ERROR] Failed to load config.json.\n";
       return;
     }
 
-    configManager.getConfig().privateKey = {newPrivPath, machineName};
+    configManager.getConfig().privateKey = config_->privateKey;
 
     if (configManager.save()) {
-      std::cout << "[INFO] Private key path updated successfully.\n";
+      std::cout << "[INFO] ✅ Private key path and username updated.\n";
     } else {
-      std::cerr << "[ERROR] Failed to save config.\n";
+      std::cerr << "[ERROR] ❌ Failed to save config.json.\n";
     }
 
     std::this_thread::sleep_for(2s);
