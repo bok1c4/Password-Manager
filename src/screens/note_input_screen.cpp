@@ -13,8 +13,8 @@ using std::string;
 using namespace std::chrono_literals;
 
 NoteInputScreen::NoteInputScreen(ScreenManager *manager,
-                                 const std::string &password)
-    : manager_(manager), password_(password), note_("") {}
+                                 const std::string &password, AppConfig *config)
+    : manager_(manager), password_(password), note_(""), config_(config) {}
 
 void NoteInputScreen::render() {
   std::cout << "\n+============================================+\n";
@@ -58,8 +58,16 @@ void NoteInputScreen::handle_input(std::string key) {
       // i need to encrypt the password before proceeding to saving it
       // note should not be encrypted, note is used as reference to pw
       // for user (where user used the password)
+      // Encryption flow:
+      // 1. Generate a random AES 256 key.
+      // 2. Encrypt the passwords with it.
+      // 3. Have that AES key be encrypted with public key/s.
+      // 4: Store:
+      //        - Encrypted password (ciphertext)
+      //        - Encrypted AES key per recipient
+      //        - Note (plain text)
 
-      bool isSaved = save_to_db(password_, note_);
+      bool isSaved = save_to_db(config_->dbConnection, password_, note_);
       if (isSaved) {
         std::cout << "\n[INFO] Credentials confirmed and saved successfully!\n";
       } else {

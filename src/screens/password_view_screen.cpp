@@ -1,5 +1,6 @@
 #include "screens/password_view_screen.h"
 #include "../utils/db_utils.h"
+#include "config/config_manager.h"
 #include "screens/screen_manager.h"
 #include <chrono>
 #include <cstdlib>
@@ -7,11 +8,12 @@
 #include <limits>
 #include <thread>
 
-PasswordViewScreen::PasswordViewScreen(ScreenManager *manager)
-    : manager_(manager) {}
+PasswordViewScreen::PasswordViewScreen(ScreenManager *manager,
+                                       AppConfig *config)
+    : manager_(manager), config_(config) {}
 
 void PasswordViewScreen::render() {
-  auto entries = get_all_password_notes();
+  auto entries = get_all_password_notes(config_->dbConnection);
 
   std::cout << "\n+============================================+\n";
   std::cout << "|             STORED PASSWORDS               |\n";
@@ -39,10 +41,10 @@ void PasswordViewScreen::handle_input(std::string input) {
   }
 
   try {
-    int id = std::stoi(input); // Convert full string to int
+    int id = std::stoi(input);
     std::cout << "Pressed ID: " << id << "\n";
 
-    auto [pw, note] = get_password_by_note_id(id);
+    auto [pw, note] = get_password_by_note_id(config_->dbConnection, id);
 
     if (!pw.empty()) {
       std::cout << "\n+============================================+\n";

@@ -1,4 +1,5 @@
 #include "screens/password_generated_screen.h"
+#include "config/config_manager.h"
 #include "screens/note_input_screen.h"
 #include "screens/screen_manager.h"
 
@@ -10,8 +11,9 @@
 
 using std::string;
 
-PasswordGeneratedScreen::PasswordGeneratedScreen(ScreenManager *manager)
-    : password(generate_random_string()), manager_(manager) {}
+PasswordGeneratedScreen::PasswordGeneratedScreen(ScreenManager *manager,
+                                                 AppConfig *config)
+    : password(generate_random_string()), config_(config), manager_(manager) {}
 
 std::string
 PasswordGeneratedScreen::generate_random_string(const size_t length) {
@@ -56,8 +58,8 @@ void PasswordGeneratedScreen::handle_input(std::string key) {
     manager_->pop();
     std::cout << "\n[INFO] Returning to Home Pane...\n";
   } else if (key == "n" || key == "N") {
-    // Provide the password to NoteInputScreen for later saving
-    manager_->push(std::make_unique<NoteInputScreen>(manager_, password));
+    manager_->push(
+        std::make_unique<NoteInputScreen>(manager_, password, config_));
   } else {
     std::cout << "[WARNING] Invalid command. Press 'b' to go back or 'n' to "
                  "add a note.\n";

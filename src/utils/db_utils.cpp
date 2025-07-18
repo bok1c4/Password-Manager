@@ -1,36 +1,12 @@
-#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <pqxx/pqxx>
 #include <vector>
 
-std::string get_env_var(const char *name) {
-  const char *value = std::getenv(name);
-  if (!value) {
-    std::cerr << "[ERROR] Missing environment variable: " << name << "\n";
-    throw std::runtime_error("Missing environment variable");
-  }
-  return std::string(value);
-}
-
-// Assemble the connection string from environment
-std::string get_connection_string() {
+bool save_to_db(const std::string &dbConn, const std::string &password,
+                const std::string &note) {
   try {
-    return "host=" + get_env_var("DB_HOST") +
-           " port=" + get_env_var("DB_PORT") +
-           " dbname=" + get_env_var("DB_NAME") +
-           " user=" + get_env_var("DB_USER") +
-           " password=" + get_env_var("DB_PASSWORD");
-  } catch (const std::exception &e) {
-    std::cerr << "[FATAL] Could not build DB connection string: " << e.what()
-              << "\n";
-    throw;
-  }
-}
-
-bool save_to_db(const std::string &password, const std::string &note) {
-  try {
-    pqxx::connection conn(get_connection_string());
+    pqxx::connection conn(dbConn);
     if (!conn.is_open()) {
       std::cerr << "[ERROR] Failed to connect to database.\n";
       return false;
@@ -53,11 +29,12 @@ bool save_to_db(const std::string &password, const std::string &note) {
   }
 }
 
-std::vector<std::pair<int, std::string>> get_all_password_notes() {
+std::vector<std::pair<int, std::string>>
+get_all_password_notes(const std::string &dbConn) {
   std::vector<std::pair<int, std::string>> results;
 
   try {
-    pqxx::connection conn(get_connection_string());
+    pqxx::connection conn(dbConn);
     pqxx::work txn(conn);
 
     pqxx::result r =
@@ -77,9 +54,10 @@ std::vector<std::pair<int, std::string>> get_all_password_notes() {
   return results;
 }
 
-std::pair<std::string, std::string> get_password_by_note_id(int id) {
+std::pair<std::string, std::string>
+get_password_by_note_id(const std::string &dbConn, int id) {
   try {
-    pqxx::connection conn(get_connection_string());
+    pqxx::connection conn(dbConn);
     pqxx::work txn(conn);
 
     pqxx::result r = txn.exec_params(
