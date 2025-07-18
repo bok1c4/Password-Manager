@@ -6,6 +6,7 @@
 struct KeyReference {
   std::string path;
   std::string username;
+  std::string fingerprint;
 };
 
 struct AppConfig {

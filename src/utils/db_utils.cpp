@@ -48,6 +48,7 @@ bool save_to_db(const std::string &dbConn, const std::string &encryptedPassword,
 
 bool save_public_key_ref(const std::string &dbConn,
                          const std::string &pubKeyContent,
+                         const std::string &fingerprint,
                          const std::string &username) {
   try {
     pqxx::connection conn(dbConn);
@@ -57,9 +58,9 @@ bool save_public_key_ref(const std::string &dbConn,
     }
 
     pqxx::work txn(conn);
-    txn.exec_params(
-        "INSERT INTO user_public_keys (public_key, username) VALUES ($1, $2)",
-        pubKeyContent, username);
+    txn.exec_params("INSERT INTO user_public_keys (public_key, fingerprint, "
+                    "username) VALUES ($1, $2, $3)",
+                    pubKeyContent, fingerprint, username);
     txn.commit();
 
     std::cout << "[INFO] Public key saved to database.\n";

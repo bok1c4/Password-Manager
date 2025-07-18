@@ -61,7 +61,7 @@ void EncryptionSetupScreen::handle_input(std::string key) {
     std::cout << "Enter username/machine name for private key:\n> ";
     std::getline(std::cin, machineName);
 
-    config_->privateKey = {newPrivPath, machineName};
+    config_->privateKey = {newPrivPath, machineName, ""};
 
     // Try to match username from existing public keys based on private key
     auto maybeUsername = Encryptor::match_username_from_public_keys(
@@ -103,6 +103,13 @@ void EncryptionSetupScreen::handle_input(std::string key) {
     std::cout << "Enter username/machine name for this public key:\n> ";
     std::getline(std::cin, pubUsername);
 
+    std::string fingerprint =
+        Encryptor::get_fingerprint_from_pubkey(newPubPath);
+    if (fingerprint.empty()) {
+      std::cerr << "[ERROR] Could not extract fingerprint from public key.\n";
+      return;
+    }
+
     std::string keyData =
         Encryptor::printPublicKeyInfoAndReturnContent(newPubPath);
     if (keyData.empty()) {
@@ -123,14 +130,16 @@ void EncryptionSetupScreen::handle_input(std::string key) {
       std::cout << "[INFO] User or key already exists in DB with username: "
                 << foundUser.value() << "\n";
     } else {
-      if (!save_public_key_ref(config_->dbConnection, keyData, pubUsername)) {
+      // Save with fingerprint included
+      if (!save_public_key_ref(config_->dbConnection, keyData, fingerprint,
+                               pubUsername)) {
         std::cerr << "[ERROR] Failed to save public key to DB.\n";
         return;
       }
       std::cout << "[INFO] Public key saved to database successfully.\n";
     }
 
-    KeyReference pubKeyRef{newPubPath, pubUsername};
+    KeyReference pubKeyRef{newPubPath, pubUsername, fingerprint};
 
     bool exists = false;
     for (const auto &kr : config_->publicKeys) {
@@ -157,15 +166,15 @@ void EncryptionSetupScreen::handle_input(std::string key) {
       std::cerr << "[ERROR] Failed to save config.\n";
     }
 
-    std::this_thread::sleep_for(2s);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
     return;
   }
 
   if (key == "r") {
     KeyReference defaultPriv = {"/home/you/.keys/private.asc",
-                                "default-machine"};
+                                "default-machine", ""};
     std::vector<KeyReference> defaultPubs = {
-        {"/home/you/.keys/public.asc", "default-machine"}};
+        {"/home/you/.keys/public.asc", "default-machine", ""}};
 
     config_->privateKey = defaultPriv;
     config_->publicKeys = defaultPubs;

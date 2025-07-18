@@ -329,30 +329,24 @@ EncryptedPasswordsBeta Encryptor::encrypt_passwords_with_pks(
 
   // Collect recipients keys for encryption
   std::vector<gpgme_key_t> recipients;
+
   for (const auto &keyRef : publicKeys) {
-    gpgme_key_t key;
-    err = gpgme_op_keylist_start(ctx, nullptr, 0); // public keys
+    gpgme_key_t key = nullptr;
+    err = gpgme_op_keylist_start(ctx, keyRef.fingerprint.c_str(), 0);
     if (err != GPG_ERR_NO_ERROR) {
-      std::cerr << "[ERROR] Failed to start keylist: " << gpgme_strerror(err)
-                << "\n";
-      break;
+      std::cerr << "[ERROR] Failed to start keylist for fingerprint "
+                << keyRef.fingerprint << ": " << gpgme_strerror(err) << "\n";
+      continue;
     }
 
-    bool found = false;
-    while (gpgme_op_keylist_next(ctx, &key) == GPG_ERR_NO_ERROR) {
-      if (key && std::string(key->uids->uid) == keyRef.username) {
-        recipients.push_back(key);
-        found = true;
-        break;
-      }
-      if (key)
-        gpgme_key_unref(key);
+    if (gpgme_op_keylist_next(ctx, &key) == GPG_ERR_NO_ERROR &&
+        key != nullptr) {
+      recipients.push_back(key);
+    } else {
+      std::cerr << "[WARNING] Could not find key with fingerprint "
+                << keyRef.fingerprint << "\n";
     }
     gpgme_op_keylist_end(ctx);
-    if (!found) {
-      std::cerr << "[WARNING] Could not find key for username: "
-                << keyRef.username << "\n";
-    }
   }
 
   if (recipients.empty()) {
@@ -560,4 +554,60 @@ std::string Encryptor::aes_encrypt_password(const std::string &password,
 
   // Base64 encode output (IV + ciphertext) for storage
   return base64_encode(output.data(), output.size());
+}
+
+std::string
+Encryptor::get_fingerprint_from_pubkey(const std::string &pubKeyPath) {
+  gpgme_check_version(nullptr);
+  gpgme_ctx_t ctx;
+  gpgme_error_t err;
+
+  if ((err = gpgme_new(&ctx)) != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to create GPGME context: "
+              << gpgme_strerror(err) << "\n";
+    return "";
+  }
+
+  // Read key file
+  std::ifstream file(pubKeyPath);
+  if (!file.is_open()) {
+    std::cerr << "[ERROR] Cannot open public key file: " << pubKeyPath << "\n";
+    gpgme_release(ctx);
+    return "";
+  }
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  std::string keyData = buffer.str();
+
+  gpgme_data_t keyDataObj;
+  if ((err = gpgme_data_new_from_mem(&keyDataObj, keyData.c_str(),
+                                     keyData.size(), 0)) != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to create data object: " << gpgme_strerror(err)
+              << "\n";
+    gpgme_release(ctx);
+    return "";
+  }
+
+  if ((err = gpgme_op_import(ctx, keyDataObj)) != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to import key: " << gpgme_strerror(err)
+              << "\n";
+    gpgme_data_release(keyDataObj);
+    gpgme_release(ctx);
+    return "";
+  }
+
+  gpgme_import_result_t import_result = gpgme_op_import_result(ctx);
+  if (!import_result || !import_result->imports ||
+      !import_result->imports->fpr) {
+    std::cerr << "[ERROR] No fingerprint found in import result.\n";
+    gpgme_data_release(keyDataObj);
+    gpgme_release(ctx);
+    return "";
+  }
+
+  std::string fingerprint = import_result->imports->fpr;
+
+  gpgme_data_release(keyDataObj);
+  gpgme_release(ctx);
+  return fingerprint;
 }
