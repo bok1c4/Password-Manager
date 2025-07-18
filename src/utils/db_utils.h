@@ -7,8 +7,8 @@
 
 bool test_db_conn(const std::string &dbConn);
 
-bool save_to_db(const std::string &dbConn, const std::string &password,
-                const std::string &note);
+bool save_to_db(const std::string &dbConn, const std::string &encryptedPassword,
+                const std::string &encryptedAesKey, const std::string &note);
 
 bool save_public_key_ref(const std::string &dbConn,
                          const std::string &pubKeyContent,

@@ -19,8 +19,8 @@ bool test_db_conn(const std::string &dbConn) {
   return true;
 }
 
-bool save_to_db(const std::string &dbConn, const std::string &password,
-                const std::string &note) {
+bool save_to_db(const std::string &dbConn, const std::string &encryptedPassword,
+                const std::string &encryptedAesKey, const std::string &note) {
   try {
     pqxx::connection conn(dbConn);
     if (!conn.is_open()) {
@@ -29,8 +29,9 @@ bool save_to_db(const std::string &dbConn, const std::string &password,
     }
 
     pqxx::work txn(conn);
-    txn.exec_params("INSERT INTO passwords (password, note) VALUES ($1, $2)",
-                    password, note);
+    txn.exec_params("INSERT INTO passwords (password, aes_key, note) "
+                    "VALUES ($1, $2, $3)",
+                    encryptedPassword, encryptedAesKey, note);
     txn.commit();
 
     std::cout << "[INFO] Password saved to database.\n";

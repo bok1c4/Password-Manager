@@ -2,8 +2,10 @@
 #include <fstream>
 #include <gpgme.h>
 #include <iostream>
+#include <openssl/rand.h>
 #include <optional>
 #include <sstream>
+
 #include <vector>
 
 void Encryptor::printPublicKeyInfo(const std::string &pubKeyPath) {
@@ -384,6 +386,7 @@ EncryptedPasswordsBeta Encryptor::encrypt_passwords_with_pks(
 
   // Extract encrypted data from ciphertext object
   ssize_t encrypted_len = gpgme_data_seek(ciphertext, 0, SEEK_END);
+  std::cout << encrypted_len << std::endl;
   gpgme_data_seek(ciphertext, 0, SEEK_SET);
 
   size_t size = 0;
@@ -461,4 +464,100 @@ std::string Encryptor::decrypt_password(const std::string &encryptedData) {
   gpgme_release(ctx);
 
   return decryptedPassword;
+}
+
+std::string Encryptor::generate_aes_key() {
+  unsigned char key[32];
+  if (RAND_bytes(key, sizeof(key)) != 1) {
+    throw std::runtime_error("Failed to generate AES key");
+  }
+  return std::string(reinterpret_cast<char *>(key), sizeof(key));
+}
+
+#include <openssl/bio.h>
+#include <openssl/buffer.h>
+#include <openssl/evp.h>
+
+std::string Encryptor::base64_encode(const unsigned char *buffer,
+                                     size_t length) {
+  BIO *bio, *b64;
+  BUF_MEM *bufferPtr;
+
+  b64 = BIO_new(BIO_f_base64());
+  bio = BIO_new(BIO_s_mem());
+  bio = BIO_push(b64, bio);
+
+  // Disable newlines - write everything in one line
+  BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+
+  BIO_write(bio, buffer, static_cast<int>(length));
+  BIO_flush(bio);
+  BIO_get_mem_ptr(bio, &bufferPtr);
+
+  std::string encoded(bufferPtr->data, bufferPtr->length);
+  BIO_free_all(bio);
+
+  return encoded;
+}
+
+std::string Encryptor::aes_encrypt_password(const std::string &password,
+                                            const std::string &aes_key) {
+  if (aes_key.size() != 32) {
+    throw std::runtime_error("AES key must be 32 bytes for AES-256");
+  }
+
+  // Generate random IV (16 bytes)
+  unsigned char iv[16];
+  if (RAND_bytes(iv, sizeof(iv)) != 1) {
+    throw std::runtime_error("Failed to generate random IV");
+  }
+
+  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+  if (!ctx) {
+    throw std::runtime_error("Failed to create EVP cipher context");
+  }
+
+  int len = 0;
+  int ciphertext_len = 0;
+
+  // Output buffer: ciphertext length can be up to input length + block size (16
+  // bytes)
+  std::vector<unsigned char> ciphertext(password.size() + 16);
+
+  // Initialize encryption operation
+  if (EVP_EncryptInit_ex(
+          ctx, EVP_aes_256_cbc(), NULL,
+          reinterpret_cast<const unsigned char *>(aes_key.data()), iv) != 1) {
+    EVP_CIPHER_CTX_free(ctx);
+    throw std::runtime_error("EVP_EncryptInit_ex failed");
+  }
+
+  // Encrypt password data
+  if (EVP_EncryptUpdate(
+          ctx, ciphertext.data(), &len,
+          reinterpret_cast<const unsigned char *>(password.data()),
+          static_cast<int>(password.size())) != 1) {
+    EVP_CIPHER_CTX_free(ctx);
+    throw std::runtime_error("EVP_EncryptUpdate failed");
+  }
+  ciphertext_len = len;
+
+  // Finalize encryption (handle padding)
+  if (EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len) != 1) {
+    EVP_CIPHER_CTX_free(ctx);
+    throw std::runtime_error("EVP_EncryptFinal_ex failed");
+  }
+  ciphertext_len += len;
+
+  EVP_CIPHER_CTX_free(ctx);
+
+  // Prepend IV to ciphertext
+  std::vector<unsigned char> output;
+  output.reserve(16 + ciphertext_len);
+  output.insert(output.end(), iv, iv + 16);
+  output.insert(output.end(), ciphertext.begin(),
+                ciphertext.begin() + ciphertext_len);
+
+  // Base64 encode output (IV + ciphertext) for storage
+  return base64_encode(output.data(), output.size());
 }

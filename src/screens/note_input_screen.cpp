@@ -1,4 +1,5 @@
 #include "screens/note_input_screen.h"
+#include "../utils/crypto.h"
 #include "../utils/db_utils.h"
 #include "../utils/terminal_utils.h"
 #include "screens/screen_manager.h"
@@ -30,13 +31,22 @@ void NoteInputScreen::render() {
 }
 
 void NoteInputScreen::handle_input(std::string key) {
+  // Cancel and go back on ESC
   if (key == "ESC") {
     std::cout << "\n[INFO] Going back to password screen...\n";
     manager_->pop();
     return;
   }
 
-  // Handle Enter (user presses enter, so input is empty string)
+  // Handle Backspace (common codes: "\b", ASCII 127 or 8)
+  if (key == "\b" || (key.size() == 1 && (key[0] == 127 || key[0] == 8))) {
+    if (!note_.empty()) {
+      note_.pop_back();
+    }
+    return;
+  }
+
+  // Handle Enter key (empty string here means user pressed Enter)
   if (key.empty()) {
     std::cout << "\n[INFO] Note saved for password.\n";
     std::cout << "[DEBUG] Password: " << password_ << "\n";
@@ -47,59 +57,65 @@ void NoteInputScreen::handle_input(std::string key) {
                 << "... " << std::flush;
       std::this_thread::sleep_for(1s);
     }
-
     std::cout << std::endl;
     std::cout << "Press Return (Enter) to confirm saving, or ESC to go back: "
               << std::flush;
 
     char confirm_key = getch();
+
     if (confirm_key == '\n' || confirm_key == '\r') {
+      try {
+        // 1. Generate AES key (32 bytes)
+        std::string aes_key = Encryptor::generate_aes_key();
 
-      // i need to encrypt the password before proceeding to saving it
-      // note should not be encrypted, note is used as reference to pw
-      // for user (where user used the password)
-      // Encryption flow:
-      // 1. Generate a random AES 256 key.
-      // 2. Encrypt the passwords with it.
-      // 3. Have that AES key be encrypted with public key/s.
-      // 4: Store:
-      //        - Encrypted password (ciphertext)
-      //        - Encrypted AES key per recipient
-      //        - Note (plain text)
+        // 2. Encrypt password with AES key
+        std::string encrypted_password =
+            Encryptor::aes_encrypt_password(password_, aes_key);
 
-      bool isSaved = save_to_db(config_->dbConnection, password_, note_);
-      if (isSaved) {
-        std::cout << "\n[INFO] Credentials confirmed and saved successfully!\n";
-      } else {
-        std::cerr << "\n[ERROR] Failed to save credentials to the database.\n";
-
-        std::ofstream log("db_errors.log", std::ios::app);
-        if (log.is_open()) {
-          log << "[ERROR] Failed to save note for password: " << password_
-              << "\n";
-          log.close();
+        // 3. Encrypt AES key with recipient public keys (hybrid encryption)
+        auto encryptedAesKey =
+            Encryptor::encrypt_passwords_with_pks(aes_key, config_->publicKeys);
+        if (encryptedAesKey.encryptedPasswords.empty()) {
+          std::cerr << "[ERROR] Failed to encrypt AES key with public keys.\n";
+          return;
         }
+
+        // 4. Save encrypted password, encrypted AES key(s), and note
+        // (plaintext)
+        bool isSaved = save_to_db(config_->dbConnection, encrypted_password,
+                                  encryptedAesKey.encryptedPasswords, note_);
+
+        if (isSaved) {
+          std::cout
+              << "\n[INFO] Credentials confirmed and saved successfully!\n";
+        } else {
+          std::cerr
+              << "\n[ERROR] Failed to save credentials to the database.\n";
+          std::ofstream log("db_errors.log", std::ios::app);
+          if (log.is_open()) {
+            log << "[ERROR] Failed to save encrypted note for password: "
+                << password_ << "\n";
+            log.close();
+          }
+        }
+      } catch (const std::exception &ex) {
+        std::cerr << "[EXCEPTION] " << ex.what() << "\n";
       }
+
       manager_->pop();
-    } else if (confirm_key == 27) { // ESC
+      return;
+    } else if (confirm_key == 27) { // ESC to cancel on confirmation prompt
       std::cout
           << "\n[INFO] Operation cancelled. Returning to previous screen.\n";
       manager_->pop();
+      return;
     } else {
       std::cout << "\n[WARNING] Unknown input. Returning to previous screen.\n";
       manager_->pop();
+      return;
     }
-    return;
   }
 
-  // Handle Backspace
-  if (key == "\b" || key[0] == 127 || key[0] == 8) {
-    if (!note_.empty()) {
-      note_.pop_back();
-    }
-    return;
-  }
-
-  // Accept character input
+  // Normal character input: append to note
   note_ += key;
 }

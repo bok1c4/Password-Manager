@@ -8,8 +8,7 @@ CXXFLAGS = -Wall -Wextra -g -std=c++17 \
 # Use pkg-config to get proper flags for all libraries
 PKG_CONFIG = pkg-config
 INCLUDES = $(shell $(PKG_CONFIG) --cflags libpqxx libpq gpgme)
-LIBS     = $(shell $(PKG_CONFIG) --libs libpqxx libpq gpgme)
-
+LIBS     = $(shell $(PKG_CONFIG) --libs libpqxx libpq gpgme) -lcrypto
 # === Directories ===
 
 SRC_DIR = src

@@ -24,4 +24,9 @@ public:
                              const std::vector<KeyReference> &publicKeys);
 
   static std::string decrypt_password(const std::string &encryptedData);
+
+  static std::string generate_aes_key();
+  static std::string aes_encrypt_password(const std::string &password,
+                                          const std::string &aes_key);
+  static std::string base64_encode(const unsigned char *buffer, size_t length);
 };
