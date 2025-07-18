@@ -43,7 +43,7 @@ void MainMenuScreen::handle_input(std::string key) {
   } else if (key == "3") {
     manager_->push(std::make_unique<ManageDatabaseScreen>(manager_, config_));
   } else if (key == "4") {
-    manager_->push(std::make_unique<EncryptionSetupScreen>(manager_));
+    manager_->push(std::make_unique<EncryptionSetupScreen>(manager_, config_));
   } else if (key == "q" || key == "Q") {
     std::cout << "\n[INFO] Exiting program...\n";
     std::this_thread::sleep_for(2000ms);
