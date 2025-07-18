@@ -1,7 +1,23 @@
 #include <fstream>
 #include <iostream>
+#include <postgresql/libpq-fe.h>
 #include <pqxx/pqxx>
 #include <vector>
+
+bool test_db_conn(const std::string &dbConn) {
+  PGconn *conn = PQconnectdb(dbConn.c_str());
+
+  if (PQstatus(conn) != CONNECTION_OK) {
+    std::cerr << "[ERROR] Connection failed: " << PQerrorMessage(conn)
+              << std::endl;
+    PQfinish(conn);
+    return false;
+  }
+
+  std::cout << "[INFO] Database connection successful." << std::endl;
+  PQfinish(conn);
+  return true;
+}
 
 bool save_to_db(const std::string &dbConn, const std::string &password,
                 const std::string &note) {
@@ -25,6 +41,30 @@ bool save_to_db(const std::string &dbConn, const std::string &password,
     if (log_file.is_open()) {
       log_file << "[ERROR] Failed to save to DB: " << e.what() << "\n";
     }
+    return false;
+  }
+}
+
+bool save_public_key_ref(const std::string &dbConn,
+                         const std::string &pubKeyContent,
+                         const std::string &username) {
+  try {
+    pqxx::connection conn(dbConn);
+    if (!conn.is_open()) {
+      std::cerr << "[ERROR] Could not open DB connection.\n";
+      return false;
+    }
+
+    pqxx::work txn(conn);
+    txn.exec_params(
+        "INSERT INTO user_public_keys (public_key, username) VALUES ($1, $2)",
+        pubKeyContent, username);
+    txn.commit();
+
+    std::cout << "[INFO] Public key saved to database.\n";
+    return true;
+  } catch (const std::exception &e) {
+    std::cerr << "[ERROR] DB insert failed: " << e.what() << "\n";
     return false;
   }
 }
@@ -73,4 +113,29 @@ get_password_by_note_id(const std::string &dbConn, int id) {
   }
 
   return {"", ""};
+}
+
+std::optional<std::string>
+find_user_by_key_or_username(const std::string &dbConn,
+                             const std::string &pubKeyContent,
+                             const std::string &username) {
+  try {
+    pqxx::connection conn(dbConn);
+    pqxx::work txn(conn);
+
+    pqxx::result r =
+        txn.exec_params("SELECT username FROM user_public_keys WHERE "
+                        "public_key = $1 OR username = $2 LIMIT 1",
+                        pubKeyContent, username);
+
+    txn.commit();
+
+    if (r.size() == 1) {
+      // Return found username
+      return r[0][0].as<std::string>();
+    }
+  } catch (const std::exception &e) {
+    std::cerr << "[ERROR] DB search failed: " << e.what() << "\n";
+  }
+  return std::nullopt;
 }

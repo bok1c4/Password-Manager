@@ -21,10 +21,10 @@ int main() {
 
   // config output
   std::cout << "[DEBUG] DB: " << config.dbConnection << "\n";
-  std::cout << "[DEBUG] Private Key: " << config.privateKeyPath << "\n";
+  std::cout << "[DEBUG] Private Key: " << config.privateKey.path << "\n";
   std::cout << "[DEBUG] Public Keys:\n";
   for (const auto &key : config.publicKeys)
-    std::cout << "  - " << key << "\n";
+    std::cout << "  - " << key.username << "\n";
 
   ScreenManager screen_manager;
 

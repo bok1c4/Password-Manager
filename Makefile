@@ -1,37 +1,29 @@
-# === Compiler and flags ===
+# === Compiler and Flags ===
 
 CXX = g++
 CXXFLAGS = -Wall -Wextra -g -std=c++17 \
            -Iinclude \
-           -Isrc/utils \
-           -Iinclude/dotenv-cpp/include  # dotenv-cpp headers
+           -Isrc/utils
 
-# Use pkg-config to get linker and include flags for libpqxx and libpq
+# Use pkg-config to get proper flags for all libraries
 PKG_CONFIG = pkg-config
-LIBS = $(shell $(PKG_CONFIG) --libs libpqxx libpq)
-INCLUDES = $(shell $(PKG_CONFIG) --cflags libpqxx)
+INCLUDES = $(shell $(PKG_CONFIG) --cflags libpqxx libpq gpgme)
+LIBS     = $(shell $(PKG_CONFIG) --libs libpqxx libpq gpgme)
 
 # === Directories ===
 
 SRC_DIR = src
-DOTENV_SRC_DIR = include/dotenv-cpp/src/laserpants/dotenv
-DOTENV_BUILD_DIR = build/dotenv
 BUILD_DIR = build
-INCLUDE_DIR = include
 
-# === Sources ===
+# === Source Files ===
 
 SOURCES = $(wildcard $(SRC_DIR)/*.cpp) \
           $(wildcard $(SRC_DIR)/utils/*.cpp) \
           $(wildcard $(SRC_DIR)/screens/*.cpp)
 
-DOTENV_SOURCES = $(wildcard $(DOTENV_SRC_DIR)/*.cpp)
-
-# Object files for your source files
 OBJECTS = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(SOURCES))
 
-# Object files for dotenv-cpp sources
-DOTENV_OBJECTS = $(patsubst $(DOTENV_SRC_DIR)/%.cpp, $(DOTENV_BUILD_DIR)/%.o, $(DOTENV_SOURCES))
+# === Target ===
 
 TARGET = $(BUILD_DIR)/main
 
@@ -39,19 +31,12 @@ TARGET = $(BUILD_DIR)/main
 
 all: $(TARGET)
 
-# Link all objects including dotenv
-$(TARGET): $(OBJECTS) $(DOTENV_OBJECTS)
+$(TARGET): $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
-# Compile your source files to object files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
-
-# Compile dotenv-cpp source files to object files
-$(DOTENV_BUILD_DIR)/%.o: $(DOTENV_SRC_DIR)/%.cpp
-	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -Iinclude/dotenv-cpp/include -c $< -o $@
 
 # === Clean ===
 

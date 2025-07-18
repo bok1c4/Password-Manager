@@ -1,25 +1,16 @@
 #include "screens/encryption_setup_screen.h"
+#include "../utils/crypto.h"
+#include "../utils/db_utils.h"
 #include "config/config_manager.h"
 #include "screens/screen_manager.h"
 #include <chrono>
 #include <iostream>
 #include <thread>
 
-using namespace std::chrono_literals;
+using std::cerr;
+using std::cout;
 
-// So for user to provide public key
-// I need to have valid db connection
-// store the pk in database and link it to the user provided
-//
-// When user provides the public key to the CLI TOOL,
-// besides the pk path, user needs to provide some kind of username
-// which will reference the machine where the public key is used
-//
-// So when user provides pk with username
-// check if its already in config.json and db
-//
-// in config.json we should also provide the username
-// and to display the data on the screen
+using namespace std::chrono_literals;
 
 EncryptionSetupScreen::EncryptionSetupScreen(ScreenManager *manager,
                                              AppConfig *config)
@@ -32,16 +23,16 @@ void EncryptionSetupScreen::render() {
 +--------------------------------------------+
 |                                            |
 |  Current Private Key Path:                  
-|    )" + config_->privateKeyPath +
+|    )" + config_->privateKey.path +
                     R"(        
 |                                            
-|  Current Public Keys Paths:                 
+|  Current Public Keys Paths:                | 
 )";
 
   std::cout << art;
 
   for (const auto &pubKey : config_->publicKeys) {
-    std::cout << "    - " << pubKey << "\n";
+    std::cout << "    - " << pubKey.path << "\n";
   }
 
   std::cout << R"(
@@ -69,20 +60,26 @@ void EncryptionSetupScreen::handle_input(std::string key) {
     std::cout << "Enter new private key path:\n> ";
     std::getline(std::cin, newPrivPath);
 
-    config_->privateKeyPath = newPrivPath;
+    std::string machineName;
+    std::cout << "Enter username/machine name for private key:\n> ";
+    std::getline(std::cin, machineName);
+
+    config_->privateKey = {newPrivPath, machineName};
 
     ConfigManager configManager("config.json");
     if (!configManager.load()) {
       std::cerr << "[ERROR] Failed to load config.json.\n";
       return;
     }
-    configManager.getConfig().privateKeyPath = newPrivPath;
+
+    configManager.getConfig().privateKey = {newPrivPath, machineName};
 
     if (configManager.save()) {
       std::cout << "[INFO] Private key path updated successfully.\n";
     } else {
       std::cerr << "[ERROR] Failed to save config.\n";
     }
+
     std::this_thread::sleep_for(2s);
     return;
   }
@@ -92,31 +89,75 @@ void EncryptionSetupScreen::handle_input(std::string key) {
     std::cout << "Enter new public key path to add:\n> ";
     std::getline(std::cin, newPubPath);
 
-    // Add new public key path to vector
-    config_->publicKeys.push_back(newPubPath);
+    std::string pubUsername;
+    std::cout << "Enter username/machine name for this public key:\n> ";
+    std::getline(std::cin, pubUsername);
+
+    std::string keyData =
+        Encryptor::printPublicKeyInfoAndReturnContent(newPubPath);
+    if (keyData.empty()) {
+      std::cerr << "[ERROR] Could not parse or read the key.\n";
+      return;
+    }
+
+    if (!test_db_conn(config_->dbConnection)) {
+      std::cerr
+          << "Could not connect to the database, please check your URI.\n";
+      return;
+    }
+
+    auto foundUser = find_user_by_key_or_username(config_->dbConnection,
+                                                  keyData, pubUsername);
+
+    if (foundUser.has_value()) {
+      std::cout << "[INFO] User or key already exists in DB with username: "
+                << foundUser.value() << "\n";
+    } else {
+      if (!save_public_key_ref(config_->dbConnection, keyData, pubUsername)) {
+        std::cerr << "[ERROR] Failed to save public key to DB.\n";
+        return;
+      }
+      std::cout << "[INFO] Public key saved to database successfully.\n";
+    }
+
+    KeyReference pubKeyRef{newPubPath, pubUsername};
+
+    bool exists = false;
+    for (const auto &kr : config_->publicKeys) {
+      if (kr.path == newPubPath && kr.username == pubUsername) {
+        exists = true;
+        break;
+      }
+    }
+    if (!exists) {
+      config_->publicKeys.push_back(pubKeyRef);
+    }
 
     ConfigManager configManager("config.json");
     if (!configManager.load()) {
       std::cerr << "[ERROR] Failed to load config.json.\n";
       return;
     }
-    configManager.getConfig().publicKeys.push_back(newPubPath);
+
+    configManager.getConfig().publicKeys = config_->publicKeys;
 
     if (configManager.save()) {
-      std::cout << "[INFO] Public key path added successfully.\n";
+      std::cout << "[INFO] Config file updated with public keys.\n";
     } else {
       std::cerr << "[ERROR] Failed to save config.\n";
     }
+
     std::this_thread::sleep_for(2s);
     return;
   }
 
   if (key == "r") {
-    // Reset to some sensible default paths
-    std::string defaultPriv = "/home/you/.keys/private.asc";
-    std::vector<std::string> defaultPubs = {"/home/you/.keys/public.asc"};
+    KeyReference defaultPriv = {"/home/you/.keys/private.asc",
+                                "default-machine"};
+    std::vector<KeyReference> defaultPubs = {
+        {"/home/you/.keys/public.asc", "default-machine"}};
 
-    config_->privateKeyPath = defaultPriv;
+    config_->privateKey = defaultPriv;
     config_->publicKeys = defaultPubs;
 
     ConfigManager configManager("config.json");
@@ -124,7 +165,8 @@ void EncryptionSetupScreen::handle_input(std::string key) {
       std::cerr << "[ERROR] Failed to load config.json.\n";
       return;
     }
-    configManager.getConfig().privateKeyPath = defaultPriv;
+
+    configManager.getConfig().privateKey = defaultPriv;
     configManager.getConfig().publicKeys = defaultPubs;
 
     if (configManager.save()) {
@@ -132,6 +174,7 @@ void EncryptionSetupScreen::handle_input(std::string key) {
     } else {
       std::cerr << "[ERROR] Failed to save config.\n";
     }
+
     std::this_thread::sleep_for(2s);
     return;
   }

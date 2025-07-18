@@ -13,10 +13,11 @@ bool ConfigManager::load() {
   if (!file.is_open()) {
     std::cerr << "[INFO] Config file not found. Creating default config...\n";
 
+    config_.username = "default-machine";
+    config_.privateKey = {"/home/you/.keys/private.asc", "default-machine"};
+    config_.publicKeys = {{"/home/you/.keys/public.asc", "default-machine"},
+                          {"/mnt/shared/public_vm.asc", "vm-machine"}};
     config_.dbConnection = "postgres://user:pass@localhost:5432/passwords";
-    config_.privateKeyPath = "/home/you/.keys/private.asc";
-    config_.publicKeys = {"/home/you/.keys/public.asc",
-                          "/mnt/shared/public_vm.asc"};
 
     return save();
   }
@@ -24,10 +25,16 @@ bool ConfigManager::load() {
   json j;
   file >> j;
 
+  config_.username = j.value("username", "default-machine");
   config_.dbConnection = j["db_connection"];
-  config_.privateKeyPath = j["private_key_path"];
-  for (const auto &key : j["public_keys"]) {
-    config_.publicKeys.push_back(key);
+
+  auto priv = j["private_key"];
+  config_.privateKey.path = priv["path"];
+  config_.privateKey.username = priv["username"];
+
+  config_.publicKeys.clear();
+  for (const auto &pk : j["public_keys"]) {
+    config_.publicKeys.push_back({pk["path"], pk["username"]});
   }
 
   return true;
@@ -35,9 +42,16 @@ bool ConfigManager::load() {
 
 bool ConfigManager::save() {
   json j;
+  j["username"] = config_.username;
   j["db_connection"] = config_.dbConnection;
-  j["private_key_path"] = config_.privateKeyPath;
-  j["public_keys"] = config_.publicKeys;
+
+  j["private_key"] = {{"path", config_.privateKey.path},
+                      {"username", config_.privateKey.username}};
+
+  j["public_keys"] = json::array();
+  for (const auto &pk : config_.publicKeys) {
+    j["public_keys"].push_back({{"path", pk.path}, {"username", pk.username}});
+  }
 
   std::ofstream file(configPath_);
   if (!file.is_open())

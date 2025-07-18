@@ -1,11 +1,18 @@
 #pragma once
+
 #include <string>
 #include <vector>
 
+struct KeyReference {
+  std::string path;
+  std::string username;
+};
+
 struct AppConfig {
+  std::string username;
   std::string dbConnection;
-  std::string privateKeyPath;
-  std::vector<std::string> publicKeys;
+  KeyReference privateKey;
+  std::vector<KeyReference> publicKeys;
 };
 
 class ConfigManager {
