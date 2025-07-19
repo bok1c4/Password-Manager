@@ -12,6 +12,7 @@ bool save_to_db(const std::string &dbConn, const std::string &encryptedPassword,
 
 bool save_public_key_ref(const std::string &dbConn,
                          const std::string &pubKeyContent,
+                         const std::string &fingerprint,
                          const std::string &username);
 
 std::vector<std::pair<int, std::string>>

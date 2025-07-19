@@ -14,9 +14,12 @@ bool ConfigManager::load() {
     std::cerr << "[INFO] Config file not found. Creating default config...\n";
 
     config_.username = "default-machine";
-    config_.privateKey = {"/home/you/.keys/private.asc", "default-machine"};
-    config_.publicKeys = {{"/home/you/.keys/public.asc", "default-machine"},
-                          {"/mnt/shared/public_vm.asc", "vm-machine"}};
+    config_.privateKey = {
+        "/home/you/.keys/private.asc", "default-machine",
+        "" // fingerprint empty
+    };
+    config_.publicKeys = {{"/home/you/.keys/public.asc", "default-machine", ""},
+                          {"/mnt/shared/public_vm.asc", "vm-machine", ""}};
     config_.dbConnection = "postgres://user:pass@localhost:5432/passwords";
 
     return save();
@@ -26,15 +29,24 @@ bool ConfigManager::load() {
   file >> j;
 
   config_.username = j.value("username", "default-machine");
-  config_.dbConnection = j["db_connection"];
+  config_.dbConnection = j.value("db_connection", "");
 
   auto priv = j["private_key"];
   config_.privateKey.path = priv["path"];
   config_.privateKey.username = priv["username"];
+  if (priv.contains("fingerprint")) {
+    config_.privateKey.fingerprint = priv["fingerprint"];
+  }
 
   config_.publicKeys.clear();
   for (const auto &pk : j["public_keys"]) {
-    config_.publicKeys.push_back({pk["path"], pk["username"]});
+    KeyReference ref;
+    ref.path = pk["path"];
+    ref.username = pk["username"];
+    if (pk.contains("fingerprint")) {
+      ref.fingerprint = pk["fingerprint"];
+    }
+    config_.publicKeys.push_back(ref);
   }
 
   return true;
@@ -47,10 +59,17 @@ bool ConfigManager::save() {
 
   j["private_key"] = {{"path", config_.privateKey.path},
                       {"username", config_.privateKey.username}};
+  if (!config_.privateKey.fingerprint.empty()) {
+    j["private_key"]["fingerprint"] = config_.privateKey.fingerprint;
+  }
 
   j["public_keys"] = json::array();
   for (const auto &pk : config_.publicKeys) {
-    j["public_keys"].push_back({{"path", pk.path}, {"username", pk.username}});
+    json pkJson = {{"path", pk.path}, {"username", pk.username}};
+    if (!pk.fingerprint.empty()) {
+      pkJson["fingerprint"] = pk.fingerprint;
+    }
+    j["public_keys"].push_back(pkJson);
   }
 
   std::ofstream file(configPath_);
