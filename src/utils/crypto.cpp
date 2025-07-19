@@ -286,6 +286,8 @@ std::optional<std::string> Encryptor::match_username_from_public_keys(
 EncryptedPasswordsBeta Encryptor::encrypt_passwords_with_pks(
     const std::string &password, const std::vector<KeyReference> &publicKeys) {
 
+  std::cout << "[INFO] Starting encryption process.\n";
+
   gpgme_check_version(nullptr);
   gpgme_ctx_t ctx;
   gpgme_error_t err = gpgme_new(&ctx);
@@ -296,9 +298,12 @@ EncryptedPasswordsBeta Encryptor::encrypt_passwords_with_pks(
   }
 
   gpgme_set_armor(ctx, 1); // output ASCII armored
+  std::cout << "[INFO] GPGME context created and ASCII armor enabled.\n";
 
   // Import all recipient public keys to the keyring temporarily
   for (const auto &keyRef : publicKeys) {
+    std::cout << "[INFO] Processing public key: " << keyRef.path << "\n";
+
     std::ifstream pubFile(keyRef.path);
     if (!pubFile) {
       std::cerr << "[WARNING] Cannot open public key file: " << keyRef.path
@@ -308,6 +313,7 @@ EncryptedPasswordsBeta Encryptor::encrypt_passwords_with_pks(
     std::stringstream buffer;
     buffer << pubFile.rdbuf();
     std::string keyData = buffer.str();
+    std::cout << "[INFO] Read public key data from file.\n";
 
     gpgme_data_t keyDataObj;
     err = gpgme_data_new_from_mem(&keyDataObj, keyData.c_str(), keyData.size(),
@@ -324,13 +330,17 @@ EncryptedPasswordsBeta Encryptor::encrypt_passwords_with_pks(
       std::cerr << "[WARNING] Failed to import public key: "
                 << gpgme_strerror(err) << "\n";
       continue;
+    } else {
+      std::cout << "[INFO] Successfully imported public key.\n";
     }
   }
 
-  // Collect recipients keys for encryption
   std::vector<gpgme_key_t> recipients;
 
   for (const auto &keyRef : publicKeys) {
+    std::cout << "[INFO] Looking up key with fingerprint: "
+              << keyRef.fingerprint << "\n";
+
     gpgme_key_t key = nullptr;
     err = gpgme_op_keylist_start(ctx, keyRef.fingerprint.c_str(), 0);
     if (err != GPG_ERR_NO_ERROR) {
@@ -339,13 +349,15 @@ EncryptedPasswordsBeta Encryptor::encrypt_passwords_with_pks(
       continue;
     }
 
-    if (gpgme_op_keylist_next(ctx, &key) == GPG_ERR_NO_ERROR &&
-        key != nullptr) {
+    err = gpgme_op_keylist_next(ctx, &key);
+    if (err == GPG_ERR_NO_ERROR && key != nullptr) {
+      std::cout << "[INFO] Key found and added to recipients.\n";
       recipients.push_back(key);
     } else {
       std::cerr << "[WARNING] Could not find key with fingerprint "
                 << keyRef.fingerprint << "\n";
     }
+
     gpgme_op_keylist_end(ctx);
   }
 
@@ -355,16 +367,33 @@ EncryptedPasswordsBeta Encryptor::encrypt_passwords_with_pks(
     return {};
   }
 
-  // Prepare data for encryption
-  gpgme_data_t plaintext, ciphertext;
-  gpgme_data_new_from_mem(&plaintext, password.c_str(), password.size(), 0);
-  gpgme_data_new(&ciphertext);
+  std::cout << "[INFO] Total recipients for encryption: " << recipients.size()
+            << "\n";
 
-  // Encrypt to multiple recipients
+  gpgme_data_t plaintext, ciphertext;
+  err =
+      gpgme_data_new_from_mem(&plaintext, password.c_str(), password.size(), 0);
+  if (err != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to create plaintext data buffer: "
+              << gpgme_strerror(err) << "\n";
+    gpgme_release(ctx);
+    return {};
+  }
+
+  err = gpgme_data_new(&ciphertext);
+  if (err != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to create ciphertext data buffer: "
+              << gpgme_strerror(err) << "\n";
+    gpgme_data_release(plaintext);
+    gpgme_release(ctx);
+    return {};
+  }
+
+  std::cout << "[INFO] Encrypting data...\n";
+
   err = gpgme_op_encrypt(ctx, recipients.data(), GPGME_ENCRYPT_ALWAYS_TRUST,
                          plaintext, ciphertext);
 
-  // Free recipients keys
   for (auto &k : recipients) {
     if (k)
       gpgme_key_unref(k);
@@ -378,20 +407,24 @@ EncryptedPasswordsBeta Encryptor::encrypt_passwords_with_pks(
     return {};
   }
 
-  // Extract encrypted data from ciphertext object
+  std::cout << "[INFO] Encryption successful.\n";
+
   ssize_t encrypted_len = gpgme_data_seek(ciphertext, 0, SEEK_END);
-  std::cout << encrypted_len << std::endl;
+  std::cout << "[INFO] Encrypted length: " << encrypted_len << " bytes.\n";
   gpgme_data_seek(ciphertext, 0, SEEK_SET);
 
   size_t size = 0;
   char *encrypted_buf = gpgme_data_release_and_get_mem(ciphertext, &size);
   std::string encryptedText;
   if (encrypted_buf && size > 0) {
+    std::cout << "[INFO] Retrieved encrypted buffer of size: " << size << "\n";
     encryptedText.assign(encrypted_buf, size);
+  } else {
+    std::cerr << "[ERROR] Failed to retrieve encrypted data.\n";
   }
 
-  gpgme_data_release(ciphertext);
   gpgme_release(ctx);
+  std::cout << "[INFO] GPGME context released. Encryption process complete.\n";
 
   return {encryptedText};
 }

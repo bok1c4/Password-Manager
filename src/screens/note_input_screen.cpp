@@ -68,15 +68,13 @@ void NoteInputScreen::handle_input(std::string key) {
         // 1. Generate AES key (32 bytes)
         std::string aes_key = Encryptor::generate_aes_key();
 
-        std::cout << "aes key: " << aes_key << std::endl;
-
         // 2. Encrypt password with AES key
         std::string encrypted_password =
             Encryptor::aes_encrypt_password(password_, aes_key);
 
-        std::cout << "encrypted password: " << encrypted_password << std::endl;
-
         // 3. Encrypt AES key with recipient public keys (hybrid encryption)
+        // here we have a bug
+        // so the encrypt passwords with pk takes aes key and public keys
         auto encryptedAesKey =
             Encryptor::encrypt_passwords_with_pks(aes_key, config_->publicKeys);
         if (encryptedAesKey.encryptedPasswords.empty()) {
