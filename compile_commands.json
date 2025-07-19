@@ -1,0 +1,34 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-Wall",
+      "-Wextra",
+      "-g",
+      "-Iinclude",
+      "-c",
+      "-o",
+      "build/main.o",
+      "src/main.cpp"
+    ],
+    "directory": "/home/user/Desktop/Password-Manager",
+    "file": "/home/user/Desktop/Password-Manager/src/main.cpp",
+    "output": "/home/user/Desktop/Password-Manager/build/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-Wall",
+      "-Wextra",
+      "-g",
+      "-Iinclude",
+      "-c",
+      "-o",
+      "build/password_generation_screen.o",
+      "src/password_generation_screen.cpp"
+    ],
+    "directory": "/home/user/Desktop/Password-Manager",
+    "file": "/home/user/Desktop/Password-Manager/src/password_generation_screen.cpp",
+    "output": "/home/user/Desktop/Password-Manager/build/password_generation_screen.o"
+  }
+]

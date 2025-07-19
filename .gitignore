@@ -9,5 +9,5 @@ build/
 .cache/
 .env
 ./include/dotenv-cpp/build/
-compile_commands.json
+# compile_commands.json
 
