@@ -1,4 +1,5 @@
 #include "screens/password_view_screen.h"
+#include "../utils/crypto.h"
 #include "../utils/db_utils.h"
 #include "config/config_manager.h"
 #include "screens/screen_manager.h"
@@ -15,7 +16,7 @@ PasswordViewScreen::PasswordViewScreen(ScreenManager *manager,
 void PasswordViewScreen::render() {
   auto entries = get_all_password_notes(config_->dbConnection);
 
-  std::cout << "\n+============================================+\n";
+  std::cout << "\n+==========================================+\n";
   std::cout << "|             STORED PASSWORDS               |\n";
   std::cout << "+--------------------------------------------+\n";
 
@@ -28,7 +29,8 @@ void PasswordViewScreen::render() {
   }
 
   std::cout << "+--------------------------------------------+\n";
-  std::cout << "| Enter an ID to view note, or [b] to go back|\n";
+  std::cout << "|        Enter an ID to manage the entry     |\n";
+  std::cout << "|             or [b] to go back              |\n";
   std::cout << "+============================================+\n";
   std::cout << "Waiting for command: ";
 }
@@ -44,16 +46,45 @@ void PasswordViewScreen::handle_input(std::string input) {
     int id = std::stoi(input);
     std::cout << "Pressed ID: " << id << "\n";
 
-    auto [pw, note] = get_password_by_note_id(config_->dbConnection, id);
+    auto [pwEnc, note, aes_key_enc] =
+        get_password_by_note_id(config_->dbConnection, id);
 
-    if (!pw.empty()) {
+    if (!pwEnc.empty()) {
       std::cout << "\n+============================================+\n";
       std::cout << "|          PASSWORD DETAILS (ID: " << id
                 << ")           |\n";
       std::cout << "+--------------------------------------------+\n";
-      std::cout << "| Password: " << pw << "\n";
-      std::cout << "| Note:     " << note << "\n";
+      std::cout << "| [s] Show decrypted password                |\n";
+      std::cout << "| [e] Edit password                          |\n";
+      std::cout << "| [b] Back                                   |\n";
       std::cout << "+============================================+\n";
+      std::cout << "Choice: ";
+
+      std::string choice;
+      std::getline(std::cin, choice);
+
+      Encryptor enc(config_);
+
+      if (choice == "s" || choice == "S") {
+        try {
+          std::string password = enc.decrypt_hybrid(pwEnc, aes_key_enc);
+          if (password.empty()) {
+            std::cerr << "[ERROR] Failed to decrypt password.\n";
+          } else {
+            std::cout << "\n[DECRYPTED PASSWORD]: " << password << "\n";
+          }
+        } catch (const std::exception &e) {
+          std::cerr << "[ERROR] Decryption failed: " << e.what() << "\n";
+        }
+      } else if (choice == "e" || choice == "E") {
+        std::cout << "[INFO] Password editing is not yet implemented.\n";
+        std::cout << "[INFO] Going back...\n";
+      } else if (choice == "b" || choice == "B") {
+        std::cout << "[INFO] Going back...\n";
+      } else {
+        std::cout << "[WARNING] Invalid choice.\n";
+      }
+
     } else {
       std::cout << "\n[WARNING] No entry found for ID " << id << "\n";
     }
@@ -62,7 +93,7 @@ void PasswordViewScreen::handle_input(std::string input) {
                  "go back.\n";
   }
 
-  std::cout << "Press any key to go back...";
-  std::cin.get();
+  std::cout << "Press ENTER to go back...";
+  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
   manager_->pop();
 }

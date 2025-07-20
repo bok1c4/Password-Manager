@@ -1,4 +1,6 @@
 #include "../utils/crypto.h"
+#include "config/config_manager.h"
+#include <cstring>
 #include <fstream>
 #include <gpgme.h>
 #include <iostream>
@@ -7,6 +9,8 @@
 #include <sstream>
 
 #include <vector>
+
+Encryptor::Encryptor(AppConfig *config) : config_(config) {}
 
 void Encryptor::printPublicKeyInfo(const std::string &pubKeyPath) {
   gpgme_check_version(nullptr);
@@ -429,32 +433,24 @@ EncryptedPasswordsBeta Encryptor::encrypt_passwords_with_pks(
   return {encryptedText};
 }
 
-std::string Encryptor::decrypt_password(const std::string &encryptedData) {
-  gpgme_check_version(nullptr);
-  gpgme_ctx_t ctx;
-  gpgme_error_t err = gpgme_new(&ctx);
-  if (err != GPG_ERR_NO_ERROR) {
-    std::cerr << "[ERROR] Failed to create GPGME context: "
-              << gpgme_strerror(err) << "\n";
-    return "";
-  }
+std::string Encryptor::decrypt_password(const std::string &encryptedData,
+                                        gpgme_ctx_t ctx) {
   gpgme_set_armor(ctx, 1);
 
   gpgme_data_t cipherData, plainData;
-  err = gpgme_data_new_from_mem(&cipherData, encryptedData.c_str(),
-                                encryptedData.size(), 0);
+  gpgme_error_t err = gpgme_data_new_from_mem(
+      &cipherData, encryptedData.c_str(), encryptedData.size(), 0);
   if (err != GPG_ERR_NO_ERROR) {
     std::cerr << "[ERROR] Failed to create cipher data object: "
               << gpgme_strerror(err) << "\n";
-    gpgme_release(ctx);
     return "";
   }
+
   err = gpgme_data_new(&plainData);
   if (err != GPG_ERR_NO_ERROR) {
     std::cerr << "[ERROR] Failed to create plain data object: "
               << gpgme_strerror(err) << "\n";
     gpgme_data_release(cipherData);
-    gpgme_release(ctx);
     return "";
   }
 
@@ -464,32 +460,17 @@ std::string Encryptor::decrypt_password(const std::string &encryptedData) {
   if (err != GPG_ERR_NO_ERROR) {
     std::cerr << "[ERROR] Decryption failed: " << gpgme_strerror(err) << "\n";
     gpgme_data_release(plainData);
-    gpgme_release(ctx);
     return "";
   }
 
-  off_t size_off = gpgme_data_seek(plainData, 0, SEEK_END);
-  if (size_off < 0) {
-    std::cerr << "[ERROR] Failed to get decrypted data size\n";
-    gpgme_data_release(plainData);
-    gpgme_release(ctx);
-    return "";
-  }
-  size_t size = static_cast<size_t>(size_off);
-  gpgme_data_seek(plainData, 0, SEEK_SET);
-
-  std::string decryptedPassword(size, '\0');
-  ssize_t bytesRead = gpgme_data_read(plainData, &decryptedPassword[0], size);
-  if (bytesRead < 0) {
-    std::cerr << "[ERROR] Failed to read decrypted data\n";
-    gpgme_data_release(plainData);
-    gpgme_release(ctx);
+  size_t out_size = 0;
+  char *out_buf = gpgme_data_release_and_get_mem(plainData, &out_size);
+  if (!out_buf || out_size == 0) {
+    std::cerr << "[ERROR] Decryption returned empty result\n";
     return "";
   }
 
-  gpgme_data_release(plainData);
-  gpgme_release(ctx);
-
+  std::string decryptedPassword(out_buf, out_size);
   return decryptedPassword;
 }
 
@@ -559,7 +540,6 @@ std::string Encryptor::aes_encrypt_password(const std::string &password,
     throw std::runtime_error("EVP_EncryptInit_ex failed");
   }
 
-  // Encrypt password data
   if (EVP_EncryptUpdate(
           ctx, ciphertext.data(), &len,
           reinterpret_cast<const unsigned char *>(password.data()),
@@ -578,15 +558,232 @@ std::string Encryptor::aes_encrypt_password(const std::string &password,
 
   EVP_CIPHER_CTX_free(ctx);
 
-  // Prepend IV to ciphertext
   std::vector<unsigned char> output;
   output.reserve(16 + ciphertext_len);
   output.insert(output.end(), iv, iv + 16);
   output.insert(output.end(), ciphertext.begin(),
                 ciphertext.begin() + ciphertext_len);
 
-  // Base64 encode output (IV + ciphertext) for storage
   return base64_encode(output.data(), output.size());
+}
+
+std::vector<unsigned char> base64_decode(const std::string &encoded) {
+  BIO *bio = nullptr;
+  BIO *b64 = nullptr;
+
+  int maxLen = encoded.length();
+  std::vector<unsigned char> buffer(maxLen);
+
+  b64 = BIO_new(BIO_f_base64());
+  if (!b64) {
+    throw std::runtime_error("Failed to create BIO for base64.");
+  }
+
+  bio = BIO_new_mem_buf(encoded.data(), maxLen);
+  if (!bio) {
+    BIO_free(b64);
+    throw std::runtime_error("Failed to create memory BIO.");
+  }
+
+  bio = BIO_push(b64, bio);
+  BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); // Do not expect newlines
+
+  int decodedLen = BIO_read(bio, buffer.data(), maxLen);
+  BIO_free_all(bio);
+
+  if (decodedLen <= 0) {
+    throw std::runtime_error("Base64 decode failed.");
+  }
+
+  buffer.resize(decodedLen);
+  return buffer;
+}
+
+std::string
+Encryptor::aes_decrypt_password(const std::string &encrypted_base64,
+                                const std::vector<unsigned char> &aes_key) {
+  if (aes_key.size() != 32) {
+    throw std::runtime_error("AES key must be 32 bytes for AES-256");
+  }
+
+  // Decode Base64 (IV + ciphertext)
+  std::vector<unsigned char> decoded = base64_decode(encrypted_base64);
+
+  if (decoded.size() <= 16) {
+    throw std::runtime_error(
+        "Decoded data too short to contain IV and ciphertext.");
+  }
+
+  // Extract IV
+  unsigned char iv[16];
+  std::memcpy(iv, decoded.data(), 16);
+
+  const unsigned char *ciphertext = decoded.data() + 16;
+  int ciphertext_len = decoded.size() - 16;
+
+  // Prepare decryption context
+  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+  if (!ctx) {
+    throw std::runtime_error("Failed to create EVP context");
+  }
+
+  std::vector<unsigned char> plaintext(ciphertext_len + 16);
+  int outlen = 0, total_len = 0;
+
+  if (EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, aes_key.data(), iv) !=
+      1) {
+    EVP_CIPHER_CTX_free(ctx);
+    throw std::runtime_error("EVP_DecryptInit_ex failed");
+  }
+
+  if (EVP_DecryptUpdate(ctx, plaintext.data(), &outlen, ciphertext,
+                        ciphertext_len) != 1) {
+    EVP_CIPHER_CTX_free(ctx);
+    throw std::runtime_error("EVP_DecryptUpdate failed");
+  }
+
+  total_len = outlen;
+
+  if (EVP_DecryptFinal_ex(ctx, plaintext.data() + outlen, &outlen) != 1) {
+    EVP_CIPHER_CTX_free(ctx);
+    throw std::runtime_error("EVP_DecryptFinal_ex failed");
+  }
+
+  total_len += outlen;
+  EVP_CIPHER_CTX_free(ctx);
+
+  return std::string(reinterpret_cast<char *>(plaintext.data()), total_len);
+}
+
+bool Encryptor::load_private_key_for_decryption(
+    const std::string &privKeyPath) {
+  std::ifstream privFile(privKeyPath);
+  if (!privFile) {
+    std::cerr << "[ERROR] Could not open private key file: " << privKeyPath
+              << "\n";
+    return false;
+  }
+
+  std::stringstream buffer;
+  buffer << privFile.rdbuf();
+  std::string privKeyData = buffer.str();
+
+  gpgme_ctx_t ctx;
+  if (gpgme_new(&ctx) != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to create GPGME context.\n";
+    return false;
+  }
+
+  gpgme_data_t privData;
+  gpgme_error_t err = gpgme_data_new_from_mem(&privData, privKeyData.c_str(),
+                                              privKeyData.size(), 0);
+  if (err) {
+    std::cerr << "[ERROR] Failed to create data buffer: " << gpgme_strerror(err)
+              << "\n";
+    gpgme_release(ctx);
+    return false;
+  }
+
+  err = gpgme_op_import(ctx, privData);
+  gpgme_data_release(privData);
+  gpgme_release(ctx);
+
+  if (err != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to import private key: " << gpgme_strerror(err)
+              << "\n";
+    return false;
+  }
+
+  return true;
+}
+
+std::optional<gpgme_ctx_t>
+Encryptor::load_gpgme_ctx_with_privkey(const std::string &privKeyPath) {
+  gpgme_check_version(nullptr);
+  gpgme_ctx_t ctx = nullptr;
+  gpgme_error_t err = gpgme_new(&ctx);
+  if (err != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to create GPGME context: "
+              << gpgme_strerror(err) << "\n";
+    return std::nullopt;
+  }
+  gpgme_set_protocol(ctx, GPGME_PROTOCOL_OpenPGP);
+
+  // Read private key file
+  std::ifstream privFile(privKeyPath);
+  if (!privFile) {
+    std::cerr << "[ERROR] Could not open private key file: " << privKeyPath
+              << "\n";
+    gpgme_release(ctx);
+    return std::nullopt;
+  }
+  std::stringstream privBuffer;
+  privBuffer << privFile.rdbuf();
+  std::string privKeyData = privBuffer.str();
+
+  // Import private key
+  gpgme_data_t privDataObj;
+  err = gpgme_data_new_from_mem(&privDataObj, privKeyData.c_str(),
+                                privKeyData.size(), 0);
+  if (err != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to create data buffer from private key: "
+              << gpgme_strerror(err) << "\n";
+    gpgme_release(ctx);
+    return std::nullopt;
+  }
+
+  err = gpgme_op_import(ctx, privDataObj);
+  gpgme_data_release(privDataObj);
+  if (err != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to import private key: " << gpgme_strerror(err)
+              << "\n";
+    gpgme_release(ctx);
+    return std::nullopt;
+  }
+
+  return ctx; // Return the context with the private key imported
+}
+
+std::string Encryptor::decrypt_hybrid(const std::string &encryptedPassword,
+                                      const std::string &encryptedAesKey) {
+  std::cout << "Private key file path: " << config_->privateKey.path
+            << std::endl;
+
+  // Load GPGME context with private key
+  auto ctxOpt = load_gpgme_ctx_with_privkey(config_->privateKey.path);
+  if (!ctxOpt) {
+    std::cerr << "[ERROR] Failed to load private key context.\n";
+    return "";
+  }
+  gpgme_ctx_t ctx = *ctxOpt;
+
+  std::cout << "[INFO] Decrypting AES key...\n";
+  std::string decrypted_aes_key = decrypt_password(encryptedAesKey, ctx);
+  if (decrypted_aes_key.empty()) {
+    std::cerr << "[ERROR] Failed to decrypt AES key.\n";
+    gpgme_release(ctx);
+    return "";
+  }
+
+  std::vector<unsigned char> decoded_aes_key(decrypted_aes_key.begin(),
+                                             decrypted_aes_key.end());
+
+  gpgme_release(ctx);
+
+  // Debug print AES key hex and size
+  std::cout << "[DEBUG] AES key (hex): ";
+  for (unsigned char c : decoded_aes_key) {
+    printf("%02X", c);
+  }
+  std::cout << "\n[DEBUG] AES key size: " << decoded_aes_key.size() << "\n";
+
+  // Step 3: Decrypt the password using the decoded AES key
+  try {
+    return aes_decrypt_password(encryptedPassword, decoded_aes_key);
+  } catch (const std::exception &e) {
+    std::cerr << "[ERROR] AES decryption failed: " << e.what() << "\n";
+    return "";
+  }
 }
 
 std::string
@@ -643,4 +840,45 @@ Encryptor::get_fingerprint_from_pubkey(const std::string &pubKeyPath) {
   gpgme_data_release(keyDataObj);
   gpgme_release(ctx);
   return fingerprint;
+}
+
+bool Encryptor::import_private_key(const std::string &privateKeyPath) {
+  std::ifstream in(privateKeyPath);
+  if (!in) {
+    std::cerr << "[ERROR] Cannot open private key: " << privateKeyPath << "\n";
+    return false;
+  }
+
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  std::string keyData = buffer.str();
+
+  gpgme_ctx_t ctx;
+  if (gpgme_new(&ctx) != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to create GPGME context.\n";
+    return false;
+  }
+
+  gpgme_data_t keyDataObj;
+  gpgme_error_t err =
+      gpgme_data_new_from_mem(&keyDataObj, keyData.c_str(), keyData.size(), 0);
+  if (err) {
+    std::cerr << "[ERROR] Failed to create key data buffer: "
+              << gpgme_strerror(err) << "\n";
+    gpgme_release(ctx);
+    return false;
+  }
+
+  err = gpgme_op_import(ctx, keyDataObj);
+  gpgme_data_release(keyDataObj);
+  gpgme_release(ctx);
+
+  if (err != GPG_ERR_NO_ERROR) {
+    std::cerr << "[ERROR] Failed to import private key: " << gpgme_strerror(err)
+              << "\n";
+    return false;
+  }
+
+  std::cout << "[INFO] Private key successfully imported.\n";
+  return true;
 }
