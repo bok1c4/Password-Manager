@@ -2,6 +2,7 @@
 #include <iostream>
 #include <postgresql/libpq-fe.h>
 #include <pqxx/pqxx>
+#include <tuple>
 #include <vector>
 
 bool test_db_conn(const std::string &dbConn) {
@@ -96,25 +97,28 @@ get_all_password_notes(const std::string &dbConn) {
   return results;
 }
 
-std::pair<std::string, std::string>
+std::tuple<std::string, std::string, std::string>
 get_password_by_note_id(const std::string &dbConn, int id) {
   try {
     pqxx::connection conn(dbConn);
     pqxx::work txn(conn);
 
-    pqxx::result r = txn.exec_params(
-        "SELECT password, passwords.note FROM passwords WHERE id = $1", id);
+    pqxx::result r = txn.exec_params("SELECT password, passwords.note, "
+                                     "convert_from(passwords.aes_key, 'UTF8') "
+                                     "FROM passwords WHERE id = $1",
+                                     id);
 
     if (r.size() == 1) {
       std::string password = r[0][0].as<std::string>();
       std::string note = r[0][1].as<std::string>();
-      return {password, note};
+      std::string aes_key = r[0][2].as<std::string>();
+      return {password, note, aes_key};
     }
   } catch (const std::exception &e) {
     std::cerr << "[ERROR] Failed to retrieve entry: " << e.what() << "\n";
   }
 
-  return {"", ""};
+  return {"", "", ""};
 }
 
 std::optional<std::string>

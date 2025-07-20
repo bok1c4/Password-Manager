@@ -65,16 +65,11 @@ void NoteInputScreen::handle_input(std::string key) {
 
     if (confirm_key == '\n' || confirm_key == '\r') {
       try {
-        // 1. Generate AES key (32 bytes)
         std::string aes_key = Encryptor::generate_aes_key();
 
-        // 2. Encrypt password with AES key
         std::string encrypted_password =
             Encryptor::aes_encrypt_password(password_, aes_key);
 
-        // 3. Encrypt AES key with recipient public keys (hybrid encryption)
-        // here we have a bug
-        // so the encrypt passwords with pk takes aes key and public keys
         auto encryptedAesKey =
             Encryptor::encrypt_passwords_with_pks(aes_key, config_->publicKeys);
         if (encryptedAesKey.encryptedPasswords.empty()) {
@@ -82,8 +77,6 @@ void NoteInputScreen::handle_input(std::string key) {
           return;
         }
 
-        // 4. Save encrypted password, encrypted AES key(s), and note
-        // (plaintext)
         bool isSaved = save_to_db(config_->dbConnection, encrypted_password,
                                   encryptedAesKey.encryptedPasswords, note_);
 
