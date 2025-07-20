@@ -13,15 +13,6 @@ bool ConfigManager::load() {
   if (!file.is_open()) {
     std::cerr << "[INFO] Config file not found. Creating default config...\n";
 
-    config_.username = "default-machine";
-    config_.privateKey = {
-        "/home/you/.keys/private.asc", "default-machine",
-        "" // fingerprint empty
-    };
-    config_.publicKeys = {{"/home/you/.keys/public.asc", "default-machine", ""},
-                          {"/mnt/shared/public_vm.asc", "vm-machine", ""}};
-    config_.dbConnection = "postgres://user:pass@localhost:5432/passwords";
-
     return save();
   }
 

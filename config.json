@@ -1,0 +1,15 @@
+{
+    "db_connection": "host=192.168.100.138 port=5432 dbname=mydb user=dbuser password=temp123",
+    "private_key": {
+        "path": "/home/user/.gnupg/secret-key-57766948.asc",
+        "username": "parrot_os"
+    },
+    "public_keys": [
+        {
+            "fingerprint": "32BA2632C554B59B6E897624C75AEC4C57766948",
+            "path": "/home/user/Desktop/name",
+            "username": "parrot_os"
+        }
+    ],
+    "username": ""
+}
