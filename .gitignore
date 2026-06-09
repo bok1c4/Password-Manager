@@ -1,13 +1,29 @@
 .vscode/
+.cache/
+.env
+
+# Build outputs
+build/
+out/
+
+# Old MSVC artifacts
 main.exe
 main.exe.i64
 main.ilk
 main.obj
 main.pdb
 vc140.pdb
-build/
-.cache/
-.env
 ./include/dotenv-cpp/build/
-# compile_commands.json
 
+# Secrets / local config — never commit (use config.example.json as the template)
+config.json
+*.bak
+*.pgpass
+
+# Local operational notes (contain secrets)
+NOTES.local.md
+*.local.md
+
+# Database dumps / backups
+*.dump
+*.sql

@@ -1,0 +1,334 @@
+#include "screens.h"
+
+#include <iostream>
+#include <stdexcept>
+#include <string>
+
+#include <openssl/crypto.h>
+
+#include "config/config.h"
+#include "crypto/encryptor.h"
+#include "crypto/gpg.h"
+#include "db/repository.h"
+#include "terminal.h"
+
+namespace pwmgr::cli {
+
+// ---------------- Main menu ----------------
+void MainMenuScreen::render() {
+  std::cout << "\n";
+  std::cout << "+============================================+\n";
+  std::cout << "|         PASSWORD MANAGER  (rewrite)        |\n";
+  std::cout << "+--------------------------------------------+\n";
+  std::cout << "|  [1] Generate & store a new password       |\n";
+  std::cout << "|  [2] View / search stored passwords        |\n";
+  std::cout << "|  [3] Manage database connection            |\n";
+  std::cout << "|  [4] Encryption / keys (info)              |\n";
+  std::cout << "|  [q] Quit                                  |\n";
+  std::cout << "+============================================+\n";
+  std::cout << "> " << std::flush;
+}
+
+void MainMenuScreen::handle_input(const std::string& line) {
+  if (line == "1")
+    m_->push(std::make_unique<GenerateScreen>(m_, c_));
+  else if (line == "2")
+    m_->push(std::make_unique<ListScreen>(m_, c_));
+  else if (line == "3")
+    m_->push(std::make_unique<ManageDbScreen>(m_, c_));
+  else if (line == "4")
+    m_->push(std::make_unique<EncryptionScreen>(m_, c_));
+  else if (line == "q" || line == "Q")
+    m_->pop();
+  // anything else: just re-render
+}
+
+// ---------------- Generate ----------------
+std::string GenerateScreen::generate_password_() { return generate_password(20); }
+
+void GenerateScreen::render() {
+  std::cout << "\n+============================================+\n";
+  std::cout << "|            GENERATE NEW PASSWORD           |\n";
+  std::cout << "+--------------------------------------------+\n";
+  std::cout << "  Candidate: " << password_ << "\n";
+  std::cout << "+--------------------------------------------+\n";
+  std::cout << "  [s] save with a note   [r] regenerate   [b] back\n";
+  std::cout << "> " << std::flush;
+}
+
+void GenerateScreen::handle_input(const std::string& line) {
+  if (line == "r" || line == "R") {
+    password_ = generate_password(20);
+  } else if (line == "s" || line == "S") {
+    std::string note = prompt_line("Note / label for this password: ");
+    if (note.empty()) {
+      status_warn("A note is required (it's how you'll find the entry).");
+      pause();
+      return;
+    }
+    try {
+      crypto::NewEntry e = c_->enc->encrypt(password_);
+      std::int64_t id =
+          c_->repo->insert_entry(e.password_blob, e.aes_key_armored, note, 2);
+      status_ok("Saved entry #" + std::to_string(id) +
+                " (AES-256-GCM, v2; key GPG-wrapped).");
+    } catch (const std::exception& ex) {
+      status_err(std::string("Save failed: ") + ex.what());
+    }
+    pause();
+    m_->pop();
+  } else if (line == "b" || line == "B") {
+    m_->pop();
+  }
+}
+
+// ---------------- List / search ----------------
+void ListScreen::render() {
+  std::cout << "\n+============================================+\n";
+  std::cout << "|             STORED PASSWORDS               |\n";
+  if (filter_) std::cout << "|  filter: " << *filter_ << "\n";
+  std::cout << "+--------------------------------------------+\n";
+  try {
+    auto rows = filter_ ? c_->repo->search_notes(*filter_)
+                        : c_->repo->list_notes();
+    if (rows.empty()) {
+      std::cout << "  (no entries)\n";
+    } else {
+      for (const auto& r : rows) {
+        std::cout << "  #" << r.id << "  [v" << r.enc_version << "]  " << r.note
+                  << "\n";
+      }
+    }
+  } catch (const std::exception& ex) {
+    status_err(std::string("Could not read entries: ") + ex.what());
+  }
+  std::cout << "+--------------------------------------------+\n";
+  std::cout << "  [<id>] open   [/] search   [c] clear filter   [b] back\n";
+  std::cout << "> " << std::flush;
+}
+
+void ListScreen::handle_input(const std::string& line) {
+  if (line == "b" || line == "B") {
+    m_->pop();
+    return;
+  }
+  if (line == "/") {
+    filter_ = prompt_line("Search notes: ");
+    return;
+  }
+  if (line == "c" || line == "C") {
+    filter_.reset();
+    return;
+  }
+  try {
+    std::int64_t id = std::stoll(line);
+    m_->push(std::make_unique<EntryScreen>(m_, c_, id));
+  } catch (const std::exception&) {
+    status_warn("Enter a numeric id, '/', 'c', or 'b'.");
+    pause();
+  }
+}
+
+// ---------------- Single entry ----------------
+void EntryScreen::render() {
+  std::cout << "\n+============================================+\n";
+  std::cout << "|              PASSWORD ENTRY                |\n";
+  std::cout << "+--------------------------------------------+\n";
+  try {
+    auto e = c_->repo->get_entry(id_);
+    if (!e) {
+      std::cout << "  Entry #" << id_ << " not found.\n";
+      std::cout << "  [b] back\n> " << std::flush;
+      return;
+    }
+    std::cout << "  ID:   #" << e->id << "\n";
+    std::cout << "  Note: " << e->note << "\n";
+    std::cout << "  Enc:  v" << e->enc_version
+              << (e->enc_version == 1 ? " (legacy CBC)" : " (AES-256-GCM)")
+              << "\n";
+  } catch (const std::exception& ex) {
+    status_err(std::string("Read failed: ") + ex.what());
+  }
+  std::cout << "+--------------------------------------------+\n";
+  std::cout << "  [c] copy to clipboard   [s] show (transient)\n";
+  std::cout << "  [e] edit password   [n] rename note   [d] delete   [b] back\n";
+  std::cout << "> " << std::flush;
+}
+
+void EntryScreen::handle_input(const std::string& line) {
+  if (line == "b" || line == "B") {
+    m_->pop();
+    return;
+  }
+  std::optional<db::Entry> e;
+  try {
+    e = c_->repo->get_entry(id_);
+  } catch (const std::exception& ex) {
+    status_err(std::string("Read failed: ") + ex.what());
+    pause();
+    return;
+  }
+  if (!e) {
+    status_warn("Entry no longer exists.");
+    pause();
+    m_->pop();
+    return;
+  }
+
+  if (line == "c" || line == "C") {
+    try {
+      std::string secret = c_->enc->decrypt(e->password_blob, e->aes_key_armored);
+      std::string tool = copy_to_clipboard(secret, 20);
+      OPENSSL_cleanse(secret.data(), secret.size());  // wipe local plaintext
+      if (tool.empty())
+        status_warn("No clipboard tool found (install wl-copy, xclip, or xsel).");
+      else
+        status_ok("Copied via " + tool + " (clipboard clears in 20s).");
+    } catch (const std::exception& ex) {
+      status_err(std::string("Decrypt failed: ") + ex.what());
+    }
+    pause();
+  } else if (line == "s" || line == "S") {
+    try {
+      std::string secret = c_->enc->decrypt(e->password_blob, e->aes_key_armored);
+      // Alternate screen buffer: keeps the plaintext out of normal scrollback.
+      std::cout << "\033[?1049h\033[2J\033[H";
+      std::cout << "Password for entry #" << id_ << ":\n\n  ";
+      if (secret.empty())
+        std::cout << "(decrypted to empty — check key/passphrase)";
+      else
+        std::cout << secret;
+      std::cout << "\n";
+      prompt_line("\nPress ENTER to clear and return...");
+      std::cout << "\033[?1049l" << std::flush;
+      OPENSSL_cleanse(secret.data(), secret.size());  // wipe local plaintext
+    } catch (const std::exception& ex) {
+      status_err(std::string("Decrypt failed: ") + ex.what());
+      pause();
+    }
+  } else if (line == "e" || line == "E") {
+    std::string np = prompt_line("New password (blank = generate strong): ");
+    if (np.empty()) np = generate_password(20);
+    try {
+      crypto::NewEntry ne = c_->enc->encrypt(np);
+      c_->repo->update_password(id_, ne.password_blob, ne.aes_key_armored, 2);
+      status_ok("Password updated and re-encrypted (v2).");
+    } catch (const std::exception& ex) {
+      status_err(std::string("Update failed: ") + ex.what());
+    }
+    pause();
+  } else if (line == "n" || line == "N") {
+    std::string nn = prompt_line("New note: ");
+    if (nn.empty()) {
+      status_warn("Note unchanged (blank not allowed).");
+    } else {
+      try {
+        c_->repo->update_note(id_, nn);
+        status_ok("Note updated.");
+      } catch (const std::exception& ex) {
+        status_err(std::string("Update failed: ") + ex.what());
+      }
+    }
+    pause();
+  } else if (line == "d" || line == "D") {
+    std::string confirm = prompt_line("Type DELETE to permanently remove: ");
+    if (confirm == "DELETE") {
+      try {
+        c_->repo->delete_entry(id_);
+        status_ok("Entry deleted.");
+        pause();
+        m_->pop();
+        return;
+      } catch (const std::exception& ex) {
+        status_err(std::string("Delete failed: ") + ex.what());
+        pause();
+      }
+    } else {
+      status_warn("Delete cancelled.");
+      pause();
+    }
+  }
+}
+
+// ---------------- Manage DB ----------------
+void ManageDbScreen::render() {
+  std::cout << "\n+============================================+\n";
+  std::cout << "|          MANAGE DATABASE CONNECTION        |\n";
+  std::cout << "+--------------------------------------------+\n";
+  std::cout << "  Current: " << redact_conn(c_->config->db_connection) << "\n";
+  std::cout << "+--------------------------------------------+\n";
+  std::cout << "  [t] test   [a] change connection   [b] back\n";
+  std::cout << "> " << std::flush;
+}
+
+void ManageDbScreen::handle_input(const std::string& line) {
+  if (line == "b" || line == "B") {
+    m_->pop();
+    return;
+  }
+  if (line == "t" || line == "T") {
+    try {
+      if (c_->repo->test_connection())
+        status_ok("Connection is open.");
+      else
+        status_warn("Connection is not open.");
+    } catch (const std::exception& ex) {
+      status_err(std::string("Test failed: ") + ex.what());
+    }
+    pause();
+    return;
+  }
+  if (line == "a" || line == "A") {
+    std::string nc =
+        prompt_line("New connection (postgres URI or libpq key=val): ");
+    if (nc.empty()) {
+      status_warn("Cancelled (empty input).");
+      pause();
+      return;
+    }
+    std::cout << "  CURRENT: " << redact_conn(c_->config->db_connection) << "\n";
+    std::cout << "  NEW:     " << redact_conn(nc) << "\n";
+    std::string confirm = prompt_line("Type 'yes' to save this change: ");
+    if (confirm == "yes") {
+      std::string prev = c_->config->db_connection;
+      c_->config->db_connection = nc;
+      try {
+        c_->cfgmgr->save(*c_->config);
+        status_ok("Saved. Restart the app to use the new connection.");
+      } catch (const std::exception& ex) {
+        c_->config->db_connection = prev;  // roll back in-memory
+        status_err(std::string("Save refused: ") + ex.what());
+      }
+    } else {
+      status_warn("Change cancelled.");
+    }
+    pause();
+  }
+}
+
+// ---------------- Encryption info ----------------
+void EncryptionScreen::render() {
+  const auto& cfg = *c_->config;
+  std::cout << "\n+============================================+\n";
+  std::cout << "|              ENCRYPTION / KEYS             |\n";
+  std::cout << "+--------------------------------------------+\n";
+  std::cout << "  Private key : " << cfg.private_key.username << "  ("
+            << cfg.private_key.path << ")\n";
+  std::cout << "  Recipients  :\n";
+  for (const auto& k : cfg.public_keys)
+    std::cout << "    - " << k.username << "  " << k.fingerprint << "\n";
+  std::string recip = cfg.recipient_fingerprint();
+  bool have_secret = crypto::gpg_has_secret_key(recip);
+  std::cout << "  Decrypt key present in keyring: "
+            << (have_secret ? "yes" : "NO  <-- decryption will fail") << "\n";
+  std::cout << "+--------------------------------------------+\n";
+  std::cout << "  Key changes are intentionally done by editing the config\n";
+  std::cout << "  file directly (avoids accidentally orphaning your data).\n";
+  std::cout << "  [b] back\n> " << std::flush;
+}
+
+void EncryptionScreen::handle_input(const std::string& line) {
+  if (line == "b" || line == "B") m_->pop();
+}
+
+}  // namespace pwmgr::cli

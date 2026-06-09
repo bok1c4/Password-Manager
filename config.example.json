@@ -1,0 +1,15 @@
+{
+    "username": "your-machine-name",
+    "db_connection": "host=localhost port=5432 dbname=pwmgr user=pwmgr",
+    "private_key": {
+        "path": "/home/you/.gnupg/your-secret-key.asc",
+        "username": "your-machine-name"
+    },
+    "public_keys": [
+        {
+            "path": "/home/you/keys/your-public-key.asc",
+            "username": "your-machine-name",
+            "fingerprint": "FULL_40_CHAR_FINGERPRINT_OF_YOUR_KEY"
+        }
+    ]
+}

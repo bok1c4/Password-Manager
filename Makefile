@@ -1,46 +1,42 @@
-# === Compiler and Flags ===
+# Convenience build for environments without CMake (CMakeLists.txt is the
+# primary, documented build). Same targets: pwmgr_core objects -> pwmgr + pwmgr_tests.
+CXX      ?= g++
+CXXSTD    = -std=c++20
+WARN      = -Wall -Wextra -Wpedantic -Wshadow
+BUILD     = build/make
 
-CXX = g++
-CXXFLAGS = -Wall -Wextra -g -std=c++17 \
-           -Iinclude \
-           -Isrc/utils
+INCLUDES  = -Isrc/core -Isrc/cli -Itests -Iinclude
+PKG_CFLAGS = $(shell pkg-config --cflags libpqxx libpq gpgme)
+PKG_LIBS   = $(shell pkg-config --libs libpqxx libpq gpgme)
+SSL_LIBS   = -lcrypto
 
-# Use pkg-config to get proper flags for all libraries
-PKG_CONFIG = pkg-config
-INCLUDES = $(shell $(PKG_CONFIG) --cflags libpqxx libpq gpgme)
-LIBS     = $(shell $(PKG_CONFIG) --libs libpqxx libpq gpgme) -lcrypto
-# === Directories ===
+CXXFLAGS  = $(CXXSTD) $(WARN) -g -O0 $(INCLUDES) $(PKG_CFLAGS)
+LDLIBS    = $(PKG_LIBS) $(SSL_LIBS)
 
-SRC_DIR = src
-BUILD_DIR = build
+CORE_SRC  = $(wildcard src/core/*/*.cpp)
+CLI_SRC   = $(wildcard src/cli/*.cpp src/cli/screens/*.cpp)
+TEST_SRC  = $(wildcard tests/*.cpp)
 
-# === Source Files ===
+CORE_OBJ  = $(patsubst %.cpp,$(BUILD)/%.o,$(CORE_SRC))
+CLI_OBJ   = $(patsubst %.cpp,$(BUILD)/%.o,$(CLI_SRC))
+TEST_OBJ  = $(patsubst %.cpp,$(BUILD)/%.o,$(TEST_SRC))
 
-SOURCES = $(wildcard $(SRC_DIR)/*.cpp) \
-          $(wildcard $(SRC_DIR)/utils/*.cpp) \
-          $(wildcard $(SRC_DIR)/screens/*.cpp)
+all: $(BUILD)/pwmgr $(BUILD)/pwmgr_tests
 
-OBJECTS = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(SOURCES))
+$(BUILD)/pwmgr: $(CORE_OBJ) $(CLI_OBJ)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDLIBS)
 
-# === Target ===
+$(BUILD)/pwmgr_tests: $(CORE_OBJ) $(TEST_OBJ)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDLIBS)
 
-TARGET = $(BUILD_DIR)/main
-
-# === Build Rules ===
-
-all: $(TARGET)
-
-$(TARGET): $(OBJECTS)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
-
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
+$(BUILD)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# === Clean ===
+test: $(BUILD)/pwmgr_tests
+	$(BUILD)/pwmgr_tests --no-gated
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD)
 
-.PHONY: all clean
-
+.PHONY: all test clean
