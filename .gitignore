@@ -27,3 +27,5 @@ NOTES.local.md
 # Database dumps / backups
 *.dump
 *.sql
+# ...but keep the tracked schema bootstrap
+!scripts/schema.sql

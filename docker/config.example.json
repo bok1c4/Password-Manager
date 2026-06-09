@@ -1,0 +1,15 @@
+{
+    "username": "container",
+    "db_connection": "host=db port=5432 dbname=pwmgr user=pwmgr password=change-me",
+    "private_key": {
+        "path": "/root/.gnupg/your-secret-key.asc",
+        "username": "container"
+    },
+    "public_keys": [
+        {
+            "path": "/root/.gnupg/your-public-key.asc",
+            "username": "container",
+            "fingerprint": "FULL_40_CHAR_FINGERPRINT_OF_YOUR_KEY"
+        }
+    ]
+}

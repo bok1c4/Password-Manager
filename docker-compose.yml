@@ -1,0 +1,48 @@
+# Two ways to use this:
+#
+#  A) Postgres in Docker, CLI native (RECOMMENDED — GPG/pinentry just works):
+#       docker compose up -d db
+#       # point ~/.config/pwmgr/config.json at host=localhost port=5432
+#       ./build/make/pwmgr
+#
+#  B) Everything in Docker (GPG keyring must be mounted; needs an interactive TTY):
+#       cp docker/config.example.json docker/config.json   # edit if needed
+#       docker compose run --rm app
+#
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: pwmgr
+      POSTGRES_PASSWORD: change-me        # change this; keep it out of git
+      POSTGRES_DB: pwmgr
+    ports:
+      - "5432:5432"                        # so the native CLI (option A) can reach it
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Auto-create the base tables on first boot:
+      - ./scripts/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pwmgr -d pwmgr"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Option B only. The CLI is interactive and needs your GPG secret key to
+  # decrypt, so we mount your keyring and allocate a TTY for the pinentry prompt.
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PWMGR_CONFIG: /config/config.json
+      GPG_TTY: /dev/console
+    volumes:
+      - ./docker/config.json:/config/config.json:ro   # host=db, not localhost (see example)
+      - ${HOME}/.gnupg:/root/.gnupg                    # bring your GPG keyring for decrypt
+    stdin_open: true
+    tty: true
+
+volumes:
+  pgdata:

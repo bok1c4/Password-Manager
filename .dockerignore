@@ -1,0 +1,10 @@
+.git
+build/
+out/
+*.dump
+*.sql
+*.bak
+config.json
+docker/config.json
+NOTES.local.md
+*.local.md
