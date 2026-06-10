@@ -94,7 +94,9 @@ refused, wrong password refused.** Rollback: restore the two `.conf` files.
 ## 3. Tier 2 — Tor onion service
 
 ### 3.1 Server: torrc
-Append to `/etc/tor/torrc`:
+`scripts/setup-onion.sh` (committed) appends this block idempotently and
+prepares the directories — tor is only enabled with an explicit `--enable`.
+The block it manages in `/etc/tor/torrc`:
 ```
 HiddenServiceDir /var/lib/tor/pwmgr/
 HiddenServiceVersion 3

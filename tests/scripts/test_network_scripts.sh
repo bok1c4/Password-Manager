@@ -244,6 +244,77 @@ unit_template_placeholders() {
 
 t "socat unit template: placeholders render clean" unit_template_placeholders
 
+# ---------------- setup-onion.sh ----------------
+
+onion_env() {
+  export PWMGR_TORRC="$SB/torrc" PWMGR_HS_DIR="$SB/hsdir" PWMGR_TOR_USER="nosuchuser"
+}
+
+setup_onion_appends_once() {
+  onion_env
+  : > "$SB/torrc"
+  "$SCRIPTS/setup-onion.sh" >/dev/null 2>&1
+  "$SCRIPTS/setup-onion.sh" >/dev/null 2>&1   # idempotent
+  local n
+  n="$(grep -c "HiddenServiceDir" "$SB/torrc")"
+  [ "$n" -eq 1 ] || { echo "block appended $n times"; return 1; }
+  grep -q "HiddenServicePort 5432 127.0.0.1:5432" "$SB/torrc"
+}
+
+setup_onion_dirs_0700() {
+  onion_env
+  : > "$SB/torrc"
+  "$SCRIPTS/setup-onion.sh" >/dev/null 2>&1
+  assert_perm "$SB/hsdir" 700
+  assert_perm "$SB/hsdir/authorized_clients" 700
+}
+
+setup_onion_systemctl_gated() {
+  onion_env
+  : > "$SB/torrc"
+  "$SCRIPTS/setup-onion.sh" >/dev/null 2>&1
+  if [ -f "$SB/calls.log" ] && grep -q systemctl "$SB/calls.log"; then
+    echo "systemctl called without --enable"
+    return 1
+  fi
+  "$SCRIPTS/setup-onion.sh" --enable >/dev/null 2>&1
+  grep -q "systemctl enable --now tor" "$SB/calls.log" || { echo "--enable did not call systemctl"; return 1; }
+}
+
+setup_onion_nonexistent_torrc_creatable() {
+  onion_env   # torrc does NOT exist; its parent ($SB) is writable
+  "$SCRIPTS/setup-onion.sh" >/dev/null 2>&1
+  grep -q "HiddenServiceDir" "$SB/torrc" || { echo "creatable torrc path failed"; return 1; }
+}
+
+setup_onion_unwritable_prints_manual() {
+  onion_env
+  mkdir -p "$SB/ro"
+  : > "$SB/ro/torrc"
+  chmod 555 "$SB/ro" && chmod 444 "$SB/ro/torrc"
+  local out rc=0
+  out="$(PWMGR_TORRC="$SB/ro/torrc" "$SCRIPTS/setup-onion.sh" 2>&1)" || rc=$?
+  chmod 755 "$SB/ro"   # so cleanup can delete it
+  [ "$rc" -eq 1 ] || { echo "unwritable torrc: rc=$rc want 1"; return 1; }
+  echo "$out" | grep -q "sudo tee -a" || { echo "no manual instructions"; return 1; }
+}
+
+setup_onion_prints_hostname() {
+  onion_env
+  : > "$SB/torrc"
+  mkdir -p "$SB/hsdir"
+  echo "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion" > "$SB/hsdir/hostname"
+  "$SCRIPTS/setup-onion.sh" 2>/dev/null | grep -q "onion address: abcdef" \
+    || { echo "hostname not printed"; return 1; }
+}
+
+t "setup-onion: marker-guarded append, idempotent" setup_onion_appends_once
+t "setup-onion: HS dirs 0700" setup_onion_dirs_0700
+t "setup-onion: systemctl only with --enable" setup_onion_systemctl_gated
+t "setup-onion: nonexistent-but-creatable torrc works" setup_onion_nonexistent_torrc_creatable
+t "setup-onion: unwritable torrc -> manual instructions, exit 1" setup_onion_unwritable_prints_manual
+t "setup-onion: prints existing onion hostname" setup_onion_prints_hostname
+
 t "rotate: dry run changes nothing" rotate_dry_run_changes_nothing
 t "rotate: wrong confirmation aborts before any tool" rotate_wrong_confirmation_aborts
 t "rotate: apply = backup -> ALTER(stdin) -> pgpass(0600) -> config strip -> no .pending" rotate_apply_full_flow

@@ -36,6 +36,13 @@
 #    when first decrypting), then restore the DB from pwmgr-backups and run the
 #    app. Without this key the restored rows are ciphertext you cannot open.
 #
+#  SECOND IRREPLACEABLE SECRET (once the Tor onion service is set up)
+#    /var/lib/tor/pwmgr/hs_ed25519_secret_key IS the onion address — there is
+#    no seed phrase and no recovery; losing it means a new address rolled out
+#    to every device. Back up the whole HiddenServiceDir to the SAME offline
+#    encrypted media as this GPG key (docs/REMOTE.md section 3.3):
+#      sudo tar czf /run/media/$USER/MYUSB/pwmgr-onion-dir.tgz /var/lib/tor/pwmgr
+#
 #  PAPER BACKUP (optional, survives dead drives)
 #    gpg --export-secret-keys 29974BE04FCC7C31C4D1493730D6A019C21A600C \
 #      | paperkey | lpr            # prints; store the paper physically & safely
