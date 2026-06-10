@@ -6,6 +6,7 @@
 
 #include <openssl/crypto.h>
 
+#include "commands.h"
 #include "config/config.h"
 #include "crypto/encryptor.h"
 #include "crypto/gpg.h"
@@ -25,6 +26,7 @@ void MainMenuScreen::render() {
   std::cout << "|  [2] View / search stored passwords        |\n";
   std::cout << "|  [3] Manage database connection            |\n";
   std::cout << "|  [4] Encryption / keys (info)              |\n";
+  std::cout << "|  [5] Devices (multi-device sharing)        |\n";
   std::cout << "|  [q] Quit                                  |\n";
   std::cout << "+============================================+\n";
   std::cout << "> " << std::flush;
@@ -39,6 +41,8 @@ void MainMenuScreen::handle_input(const std::string& line) {
     m_->push(std::make_unique<ManageDbScreen>(m_, c_));
   else if (line == "4")
     m_->push(std::make_unique<EncryptionScreen>(m_, c_));
+  else if (line == "5")
+    m_->push(std::make_unique<DevicesScreen>(m_, c_));
   else if (line == "q" || line == "Q")
     m_->pop();
   // anything else: just re-render
@@ -259,6 +263,64 @@ void EntryScreen::handle_input(const std::string& line) {
       status_warn("Delete cancelled.");
       pause();
     }
+  }
+}
+
+// ---------------- Devices ----------------
+void DevicesScreen::render() {
+  std::cout << "\n+============================================+\n";
+  std::cout << "|        DEVICES (multi-device sharing)      |\n";
+  std::cout << "+--------------------------------------------+\n";
+  try {
+    if (!c_->repo->has_device_tables()) {
+      std::cout << "  Device tables not migrated yet.\n";
+      std::cout << "  Run 'pwmgr migrate' (after a backup) to enable\n";
+      std::cout << "  multi-device sharing. Nothing runs automatically.\n";
+    } else {
+      auto devices = c_->repo->list_devices();
+      if (devices.empty()) {
+        std::cout << "  (no devices registered)\n";
+      } else {
+        for (const auto& d : devices) {
+          std::cout << "  #" << d.id << "  " << d.name << "  [" << d.status
+                    << "]\n      " << d.fingerprint << "\n";
+        }
+      }
+    }
+  } catch (const std::exception& ex) {
+    status_err(std::string("Could not read devices: ") + ex.what());
+  }
+  std::cout << "+--------------------------------------------+\n";
+  std::cout << "  [a] add   [r] revoke   [w] rewrap (resume)   [b] back\n";
+  std::cout << "> " << std::flush;
+}
+
+void DevicesScreen::handle_input(const std::string& line) {
+  if (line == "b" || line == "B") {
+    m_->pop();
+    return;
+  }
+  if (line == "a" || line == "A") {
+    std::string name = prompt_line("Device name (e.g. arch-laptop): ");
+    std::string path = prompt_line("Path to its exported public key (.asc): ");
+    if (name.empty() || path.empty()) {
+      status_warn("Cancelled (empty input).");
+    } else {
+      // Fingerprint is prompted inside cmd_device_add (TTY path).
+      cmd_device_add(*c_, name, path, "");
+    }
+    pause();
+  } else if (line == "r" || line == "R") {
+    std::string name = prompt_line("Device name to revoke: ");
+    if (name.empty()) {
+      status_warn("Cancelled (empty input).");
+    } else {
+      cmd_device_revoke(*c_, name, RevokeMode::Prompt);
+    }
+    pause();
+  } else if (line == "w" || line == "W") {
+    cmd_rewrap(*c_);
+    pause();
   }
 }
 

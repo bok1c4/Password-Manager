@@ -1,7 +1,10 @@
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
 
+#include "commands.h"
 #include "config/config.h"
 #include "crypto/encryptor.h"
 #include "crypto/gpg.h"
@@ -11,8 +14,15 @@
 #include "sharing/rewrap.h"
 #include "terminal.h"
 
-int main() {
+int main(int argc, char** argv) {
   using namespace pwmgr;
+
+  const std::vector<std::string> args(argv + 1, argv + argc);
+  if (!args.empty() &&
+      (args[0] == "help" || args[0] == "--help" || args[0] == "-h")) {
+    cli::print_usage(std::cout);  // before config/DB: help must always work
+    return 0;
+  }
 
   // 1) Resolve ONE absolute config path; fail loud (never invent a default).
   config::ConfigManager cfgmgr(config::ConfigManager::default_path());
@@ -36,8 +46,14 @@ int main() {
   }
 
   // 3) Additive, idempotent migration (adds enc_version; never destructive).
+  //    Migration v2 (devices/password_keys) is OPT-IN ONLY: `pwmgr migrate`
+  //    or PWMGR_MIGRATE_V2=1 — a routine launch never writes new schema.
   try {
     repo->apply_migrations();
+    if (const char* v2 = std::getenv("PWMGR_MIGRATE_V2");
+        v2 && std::string(v2) == "1") {
+      repo->apply_migrations_v2(cli::make_founding_device(cfg));
+    }
   } catch (const std::exception& e) {
     std::cerr << "[WARN] Could not apply migrations (continuing read-only): "
               << e.what() << "\n";
@@ -53,6 +69,9 @@ int main() {
   crypto::Encryptor enc(recipient);
   sharing::RepositoryKeyStore keys(*repo);
   cli::AppContext ctx{&cfg, &cfgmgr, repo.get(), &enc, &keys};
+
+  // argv subcommand mode (scriptable surface; the test harness drives this).
+  if (!args.empty()) return cli::run_command(args, ctx);
 
   cli::ScreenManager mgr;
   mgr.push(std::make_unique<cli::MainMenuScreen>(&mgr, &ctx));

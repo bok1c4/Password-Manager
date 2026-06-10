@@ -56,6 +56,17 @@ class EntryScreen : public Screen {
   std::int64_t id_;
 };
 
+class DevicesScreen : public Screen {
+ public:
+  DevicesScreen(ScreenManager* m, AppContext* c) : m_(m), c_(c) {}
+  void render() override;
+  void handle_input(const std::string& line) override;
+
+ private:
+  ScreenManager* m_;
+  AppContext* c_;
+};
+
 class ManageDbScreen : public Screen {
  public:
   ManageDbScreen(ScreenManager* m, AppContext* c) : m_(m), c_(c) {}
