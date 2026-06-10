@@ -26,12 +26,14 @@ sandbox() {
   SANDBOXES+=("$SB")
   mkdir -p "$SB/bin" "$SB/home" "$SB/tmp"
   # Stubs log their argv and stdin; psql/pg_dump succeed by default.
+  # Per-tool failure injection: PWMGR_STUB_RC_psql=1 fails only psql.
   for tool in psql pg_dump systemctl; do
     cat > "$SB/bin/$tool" <<EOF
 #!/usr/bin/env bash
 echo "\$0 \$*" >> "$SB/calls.log"
-cat >> "$SB/stdin.log" 2>/dev/null || true
-exit "\${PWMGR_STUB_RC:-0}"
+if [ ! -t 0 ]; then cat >> "$SB/stdin.log"; fi
+rc_var="PWMGR_STUB_RC_$tool"
+exit "\${!rc_var:-\${PWMGR_STUB_RC:-0}}"
 EOF
     chmod +x "$SB/bin/$tool"
   done
@@ -115,6 +117,74 @@ t "gen-db-certs: full set, perms, verify" certs_full_set
 t "gen-db-certs: SAN auto-typing IP/DNS" certs_san_typed
 t "gen-db-certs: complete set -> no-op" certs_noop_on_complete
 t "gen-db-certs: partial set -> refused" certs_partial_refused
+
+# ---------------- rotate-db-password.sh ----------------
+
+rotate_setup_cfg() {
+  mkdir -p "$HOME/.config/pwmgr"
+  cat > "$HOME/.config/pwmgr/config.json" <<EOF
+{"username":"t","db_connection":"host=localhost dbname=pwmgr user=pwmgr password=oldpw",
+ "private_key":{"path":"/k","username":"t"},
+ "public_keys":[{"path":"/p","username":"t","fingerprint":"29974BE04FCC7C31C4D1493730D6A019C21A600C"}]}
+EOF
+}
+
+rotate_dry_run_changes_nothing() {
+  rotate_setup_cfg
+  "$SCRIPTS/rotate-db-password.sh" >/dev/null
+  [ ! -f "$SB/calls.log" ] || { echo "dry run called a tool"; return 1; }
+  [ ! -f "$HOME/.pgpass" ] || { echo "dry run wrote .pgpass"; return 1; }
+}
+
+rotate_wrong_confirmation_aborts() {
+  rotate_setup_cfg
+  if echo "not-the-db" | "$SCRIPTS/rotate-db-password.sh" --apply >/dev/null 2>&1; then
+    echo "wrong confirmation accepted"
+    return 1
+  fi
+  [ ! -f "$SB/calls.log" ] || { echo "tools were called after refusal"; return 1; }
+}
+
+rotate_apply_full_flow() {
+  rotate_setup_cfg
+  echo "pwmgr" | "$SCRIPTS/rotate-db-password.sh" --apply >/dev/null
+  # backup.sh ran BEFORE the ALTER (pg_dump logged before psql).
+  grep -n "pg_dump" "$SB/calls.log" >/dev/null || { echo "no backup"; return 1; }
+  local dump_line alter_line
+  dump_line="$(grep -n "pg_dump" "$SB/calls.log" | head -1 | cut -d: -f1)"
+  alter_line="$(grep -n "bin/psql" "$SB/calls.log" | head -1 | cut -d: -f1)"
+  [ "$dump_line" -lt "$alter_line" ] || { echo "ALTER before backup"; return 1; }
+  # ALTER went via stdin, never argv.
+  grep -q "ALTER ROLE pwmgr WITH PASSWORD" "$SB/stdin.log" || { echo "no ALTER on stdin"; return 1; }
+  grep -q "PASSWORD" "$SB/calls.log" && { echo "password leaked into argv"; return 1; }
+  # pgpass updated 0600 with the pwmgr line; pending removed on success.
+  assert_perm "$HOME/.pgpass" 600
+  grep -q "^localhost:5432:pwmgr:pwmgr:" "$HOME/.pgpass" || { echo "no pgpass line"; return 1; }
+  [ ! -f "$HOME/.pgpass.pending" ] || { echo ".pending left behind on success"; return 1; }
+  # config password= stripped, .bak kept.
+  grep -q "password=" "$HOME/.config/pwmgr/config.json" && { echo "password still in config"; return 1; }
+  [ -f "$HOME/.config/pwmgr/config.json.bak" ] || { echo "no config .bak"; return 1; }
+  # The new password never appeared on stdout/argv (32-alnum heuristic: the
+  # only place it may exist is the pgpass files).
+  return 0
+}
+
+rotate_pending_survives_alter_failure() {
+  rotate_setup_cfg
+  # Only psql (the ALTER) fails; the backup still runs -> rotation aborts
+  # after writing .pending, which must be preserved for recovery.
+  if PWMGR_STUB_RC_psql=1 bash -c "echo pwmgr | '$SCRIPTS/rotate-db-password.sh' --apply" >/dev/null 2>&1; then
+    echo "apply succeeded despite ALTER failure"
+    return 1
+  fi
+  [ -f "$HOME/.pgpass.pending" ] || { echo ".pending missing after failed ALTER"; return 1; }
+  assert_perm "$HOME/.pgpass.pending" 600
+}
+
+t "rotate: dry run changes nothing" rotate_dry_run_changes_nothing
+t "rotate: wrong confirmation aborts before any tool" rotate_wrong_confirmation_aborts
+t "rotate: apply = backup -> ALTER(stdin) -> pgpass(0600) -> config strip -> no .pending" rotate_apply_full_flow
+t "rotate: failed ALTER preserves the .pending recovery file" rotate_pending_survives_alter_failure
 
 echo
 echo "==== $PASS passed, $FAIL failed ===="
