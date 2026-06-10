@@ -14,6 +14,7 @@ struct KeyRef {
 
 struct AppConfig {
   std::string username;
+  std::string device_name;  // optional; see effective_device_name()
   std::string db_connection;
   KeyRef private_key;
   std::vector<KeyRef> public_keys;
@@ -21,6 +22,10 @@ struct AppConfig {
   // The fingerprint new writes encrypt the AES key to: the first public key
   // that carries a fingerprint. Empty if none -> treated as invalid.
   std::string recipient_fingerprint() const;
+
+  // The name this machine registers under in the devices table:
+  // device_name -> username -> "founding-device". Never empty.
+  std::string effective_device_name() const;
 };
 
 class ConfigError : public std::runtime_error {

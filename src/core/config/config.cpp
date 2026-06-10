@@ -20,6 +20,12 @@ std::string AppConfig::recipient_fingerprint() const {
   return {};
 }
 
+std::string AppConfig::effective_device_name() const {
+  if (!device_name.empty()) return device_name;
+  if (!username.empty()) return username;
+  return "founding-device";
+}
+
 fs::path ConfigManager::default_path() {
   if (const char* p = std::getenv("PWMGR_CONFIG"); p && *p) return fs::path(p);
   if (const char* x = std::getenv("XDG_CONFIG_HOME"); x && *x)
@@ -56,6 +62,7 @@ AppConfig ConfigManager::load() const {
 
   AppConfig c;
   c.username = j.value("username", "");
+  c.device_name = j.value("device_name", "");
   c.db_connection = j.value("db_connection", "");
   if (j.contains("private_key")) c.private_key = parse_key(j["private_key"]);
   if (j.contains("public_keys")) {
@@ -81,6 +88,7 @@ void ConfigManager::save(const AppConfig& c) const {
 
   json j;
   j["username"] = c.username;
+  if (!c.device_name.empty()) j["device_name"] = c.device_name;
   j["db_connection"] = c.db_connection;
   j["private_key"] = {{"path", c.private_key.path},
                       {"username", c.private_key.username}};

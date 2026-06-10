@@ -41,6 +41,44 @@ TEST_CASE("save + load roundtrip") {
   CHECK_EQ(loaded.username, std::string("arch"));
 }
 
+TEST_CASE("device_name round-trips through save + load") {
+  std::string p = tmpbase() + "/devname.json";
+  AppConfig c;
+  c.username = "arch";
+  c.device_name = "arch-desktop";
+  c.db_connection = "host=localhost dbname=pwmgr user=pwmgr";
+  c.private_key = {"/some/key.asc", "arch", ""};
+  c.public_keys.push_back(
+      {"/p", "arch", "29974BE04FCC7C31C4D1493730D6A019C21A600C"});
+  ConfigManager cm(p);
+  cm.save(c);
+  CHECK_EQ(cm.load().device_name, std::string("arch-desktop"));
+}
+
+TEST_CASE("effective_device_name falls back device_name -> username -> default") {
+  AppConfig c;
+  CHECK_EQ(c.effective_device_name(), std::string("founding-device"));
+  c.username = "arch";
+  CHECK_EQ(c.effective_device_name(), std::string("arch"));
+  c.device_name = "arch-desktop";
+  CHECK_EQ(c.effective_device_name(), std::string("arch-desktop"));
+}
+
+TEST_CASE("legacy config JSON without device_name still loads") {
+  std::string p = tmpbase() + "/legacy.json";
+  AppConfig c;
+  c.username = "arch";
+  c.db_connection = "host=localhost dbname=pwmgr user=pwmgr";
+  c.private_key = {"/some/key.asc", "arch", ""};
+  c.public_keys.push_back(
+      {"/p", "arch", "29974BE04FCC7C31C4D1493730D6A019C21A600C"});
+  ConfigManager cm(p);
+  cm.save(c);  // device_name empty -> key omitted from the JSON
+  AppConfig loaded = cm.load();
+  CHECK_EQ(loaded.device_name, std::string());
+  CHECK_EQ(loaded.effective_device_name(), std::string("arch"));
+}
+
 TEST_CASE("save refuses a poisoned config (empty recipient fingerprint)") {
   std::string p = tmpbase() + "/poison.json";
   AppConfig c;
