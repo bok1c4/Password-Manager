@@ -8,6 +8,7 @@
 #include "db/repository.h"
 #include "screen.h"
 #include "screens.h"
+#include "sharing/rewrap.h"
 #include "terminal.h"
 
 int main() {
@@ -50,7 +51,8 @@ int main() {
   }
 
   crypto::Encryptor enc(recipient);
-  cli::AppContext ctx{&cfg, &cfgmgr, repo.get(), &enc};
+  sharing::RepositoryKeyStore keys(*repo);
+  cli::AppContext ctx{&cfg, &cfgmgr, repo.get(), &enc, &keys};
 
   cli::ScreenManager mgr;
   mgr.push(std::make_unique<cli::MainMenuScreen>(&mgr, &ctx));

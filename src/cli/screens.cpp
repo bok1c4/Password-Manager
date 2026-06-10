@@ -10,6 +10,7 @@
 #include "crypto/encryptor.h"
 #include "crypto/gpg.h"
 #include "db/repository.h"
+#include "sharing/rewrap.h"
 #include "terminal.h"
 
 namespace pwmgr::cli {
@@ -67,11 +68,12 @@ void GenerateScreen::handle_input(const std::string& line) {
       return;
     }
     try {
-      crypto::NewEntry e = c_->enc->encrypt(password_);
-      std::int64_t id =
-          c_->repo->insert_entry(e.password_blob, e.aes_key_armored, note, 2);
+      std::size_t n_devices = c_->keys->active_devices().size();
+      std::int64_t id = sharing::store_new_entry(
+          *c_->keys, c_->config->recipient_fingerprint(), password_, note);
       status_ok("Saved entry #" + std::to_string(id) +
-                " (AES-256-GCM, v2; key GPG-wrapped).");
+                " (AES-256-GCM, v2; key GPG-wrapped to " +
+                std::to_string(n_devices) + " device(s) + legacy).");
     } catch (const std::exception& ex) {
       status_err(std::string("Save failed: ") + ex.what());
     }
@@ -220,9 +222,9 @@ void EntryScreen::handle_input(const std::string& line) {
     std::string np = prompt_line("New password (blank = generate strong): ");
     if (np.empty()) np = generate_password(20);
     try {
-      crypto::NewEntry ne = c_->enc->encrypt(np);
-      c_->repo->update_password(id_, ne.password_blob, ne.aes_key_armored, 2);
-      status_ok("Password updated and re-encrypted (v2).");
+      sharing::replace_entry_password(
+          *c_->keys, c_->config->recipient_fingerprint(), id_, np);
+      status_ok("Password updated and re-encrypted (v2, all devices).");
     } catch (const std::exception& ex) {
       status_err(std::string("Update failed: ") + ex.what());
     }

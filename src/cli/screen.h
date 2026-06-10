@@ -14,6 +14,9 @@ class Repository;
 namespace crypto {
 class Encryptor;
 }
+namespace sharing {
+class KeyStore;
+}
 }  // namespace pwmgr
 
 namespace pwmgr::cli {
@@ -24,6 +27,7 @@ struct AppContext {
   config::ConfigManager* cfgmgr;
   db::Repository* repo;
   crypto::Encryptor* enc;
+  sharing::KeyStore* keys;
 };
 
 class Screen {
