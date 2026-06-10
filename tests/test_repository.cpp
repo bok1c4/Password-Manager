@@ -28,11 +28,14 @@ TEST_CASE_GATED("repository CRUD round-trip (throwaway test DB only)") {
   Repository repo(cs);
   REQUIRE(repo.test_connection());
 
-  // Fresh schema for the test.
+  // Fresh schema for the test. The device tables reference passwords, so
+  // they must go first or this drop fails after a device-test run.
   {
     pqxx::connection c(cs);
     pqxx::work txn(c);
-    txn.exec("DROP TABLE IF EXISTS passwords");
+    txn.exec("DROP TABLE IF EXISTS password_keys CASCADE");
+    txn.exec("DROP TABLE IF EXISTS devices CASCADE");
+    txn.exec("DROP TABLE IF EXISTS passwords CASCADE");
     txn.exec("DROP TABLE IF EXISTS user_public_keys");
     txn.exec(
         "CREATE TABLE passwords (id bigserial PRIMARY KEY, password text NOT "
