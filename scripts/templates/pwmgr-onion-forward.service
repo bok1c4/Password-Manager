@@ -1,0 +1,25 @@
+# pwmgr client-side socat forward: localhost:@LOCAL_PORT@ -> <onion>:5432
+# (libpq cannot speak SOCKS; this bridges it through the local tor daemon —
+# docs/REMOTE.md §3.4).
+#
+# Render and install as a systemd USER unit on each remote device:
+#   sed -e 's/@ONION_ADDR@/<56-char-addr>/' \
+#       -e 's/@LOCAL_PORT@/5433/' -e 's/@SOCKS_PORT@/9050/' \
+#       pwmgr-onion-forward.service > ~/.config/systemd/user/pwmgr-onion-forward.service
+#   systemctl --user daemon-reload && systemctl --user enable --now pwmgr-onion-forward
+#
+# Caveat: a user unit cannot declare After=tor.service (system unit);
+# Restart=on-failure covers the race at boot until tor is up.
+# Client pwmgr config then uses: host=localhost port=@LOCAL_PORT@.
+[Unit]
+Description=pwmgr onion forward (localhost:@LOCAL_PORT@ -> tor)
+
+[Service]
+ExecStart=/usr/bin/socat TCP-LISTEN:@LOCAL_PORT@,bind=127.0.0.1,reuseaddr,fork SOCKS4A:127.0.0.1:@ONION_ADDR@.onion:5432,socksport=@SOCKS_PORT@
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

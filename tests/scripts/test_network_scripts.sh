@@ -181,6 +181,69 @@ rotate_pending_survives_alter_failure() {
   assert_perm "$HOME/.pgpass.pending" 600
 }
 
+# ---------------- onion-auth-keygen.sh ----------------
+
+keygen_line_formats() {
+  local out
+  out="$("$SCRIPTS/onion-auth-keygen.sh" laptop --onion abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx)"
+  echo "$out" | grep -qE '^  descriptor:x25519:[A-Z2-7]{52}$' || { echo "bad .auth line"; return 1; }
+  echo "$out" | grep -qE '^  abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx:descriptor:x25519:[A-Z2-7]{52}$' \
+    || { echo "bad .auth_private line"; return 1; }
+}
+
+keygen_unique_per_run() {
+  local a b
+  a="$("$SCRIPTS/onion-auth-keygen.sh" dev1 | grep -E '^  descriptor')"
+  b="$("$SCRIPTS/onion-auth-keygen.sh" dev1 | grep -E '^  descriptor')"
+  [ "$a" != "$b" ] || { echo "two runs produced the same key"; return 1; }
+}
+
+keygen_no_temp_residue() {
+  "$SCRIPTS/onion-auth-keygen.sh" laptop >/dev/null
+  local left
+  left="$(find "$TMPDIR" -name 'dev.p*' 2>/dev/null | wc -l)"
+  [ "$left" -eq 0 ] || { echo "raw key material left in TMPDIR"; return 1; }
+}
+
+keygen_write_dir_0600() {
+  "$SCRIPTS/onion-auth-keygen.sh" laptop --write-dir "$SB/out" >/dev/null
+  assert_perm "$SB/out/laptop.auth" 600
+  assert_perm "$SB/out/laptop.auth_private" 600
+  grep -qE '^descriptor:x25519:' "$SB/out/laptop.auth"
+}
+
+keygen_arg_validation() {
+  if "$SCRIPTS/onion-auth-keygen.sh" --onion xyz >/dev/null 2>&1; then
+    echo "leading-dash device name accepted"
+    return 1
+  fi
+  if "$SCRIPTS/onion-auth-keygen.sh" laptop --onion >/dev/null 2>&1; then
+    echo "--onion without value accepted"
+    return 1
+  fi
+  return 0
+}
+
+t "onion-keygen: .auth/.auth_private line formats" keygen_line_formats
+t "onion-keygen: unique key per run" keygen_unique_per_run
+t "onion-keygen: no raw key residue in TMPDIR" keygen_no_temp_residue
+t "onion-keygen: --write-dir files are 0600" keygen_write_dir_0600
+t "onion-keygen: argument validation" keygen_arg_validation
+
+unit_template_placeholders() {
+  local f="$HERE/scripts/templates/pwmgr-onion-forward.service"
+  grep -q '@ONION_ADDR@' "$f" && grep -q '@LOCAL_PORT@' "$f" \
+    && grep -q '@SOCKS_PORT@' "$f" || { echo "placeholder missing"; return 1; }
+  # Renders to a placeholder-free unit.
+  sed -e 's/@ONION_ADDR@/abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx/' \
+      -e 's/@LOCAL_PORT@/5433/' -e 's/@SOCKS_PORT@/9050/' "$f" > "$SB/rendered.service"
+  grep -q '@' "$SB/rendered.service" && { echo "unrendered placeholder"; return 1; }
+  grep -q 'SOCKS4A:127.0.0.1:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion:5432' \
+    "$SB/rendered.service"
+}
+
+t "socat unit template: placeholders render clean" unit_template_placeholders
+
 t "rotate: dry run changes nothing" rotate_dry_run_changes_nothing
 t "rotate: wrong confirmation aborts before any tool" rotate_wrong_confirmation_aborts
 t "rotate: apply = backup -> ALTER(stdin) -> pgpass(0600) -> config strip -> no .pending" rotate_apply_full_flow

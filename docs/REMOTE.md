@@ -113,8 +113,9 @@ HiddenServicePort 5432 127.0.0.1:5432
 Without a valid client key a device cannot even *fetch the service
 descriptor* — the service is invisible and unconnectable to everyone else.
 
-`scripts/onion-auth-keygen.sh` (Phase 4 deliverable) generates one x25519
-pair per device using only openssl + python (both already present):
+`scripts/onion-auth-keygen.sh <device> [--onion <addr>] [--write-dir <dir>]`
+(committed) generates one x25519 pair per device using only openssl + python
+(both already present) and prints both lines. The recipe it implements:
 ```bash
 openssl genpkey -algorithm x25519 -out /tmp/dev.pem
 # raw private key = last 32 bytes of the DER:
@@ -155,8 +156,9 @@ the GPG secret key (extend `scripts/export-key.sh` guidance, Phase 4).
    ```
 4. `systemctl enable --now tor`.
 5. **Bridge libpq → SOCKS** (libpq can't use a proxy natively):
-   - **Option A — socat (recommended):** a small systemd unit
-     (template is a Phase 4 deliverable):
+   - **Option A — socat (recommended):** a small systemd user unit —
+     template: `scripts/templates/pwmgr-onion-forward.service` (render
+     instructions in its header). The forward it runs:
      ```
      socat TCP-LISTEN:5433,bind=127.0.0.1,reuseaddr,fork \
            SOCKS4A:127.0.0.1:<addr>.onion:5432,socksport=9050
