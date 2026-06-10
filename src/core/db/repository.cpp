@@ -1,6 +1,27 @@
 #include "db/repository.h"
 
+#include <stdexcept>
+
 namespace pwmgr::db {
+
+namespace {
+
+// libpqxx 8 hands out pqxx::row_ref from both iteration and result indexing.
+Device device_from_row(pqxx::row_ref row) {
+  Device d;
+  d.id = row[0].as<std::int64_t>();
+  d.name = row[1].as<std::string>();
+  d.fingerprint = row[2].as<std::string>();
+  d.public_key = row[3].as<std::string>();
+  d.status = row[4].as<std::string>();
+  d.enrolled_at = row[5].as<std::string>();
+  return d;
+}
+
+constexpr const char* kDeviceCols =
+    "id, name, fingerprint, public_key, status, enrolled_at::text";
+
+}  // namespace
 
 Repository::Repository(const std::string& conn_str) : conn_(conn_str) {
   has_enc_version_ = detect_enc_version();
@@ -223,6 +244,210 @@ bool Repository::delete_entry(std::int64_t id) {
       txn.exec("DELETE FROM passwords WHERE id=$1 RETURNING id", pqxx::params{id});
   txn.commit();
   return !r.empty();
+}
+
+std::vector<Device> Repository::list_devices() {
+  if (!has_device_tables_) return {};
+  pqxx::work txn(conn_);
+  pqxx::result r = txn.exec(std::string("SELECT ") + kDeviceCols +
+                            " FROM devices ORDER BY id ASC");
+  txn.commit();
+  std::vector<Device> out;
+  out.reserve(r.size());
+  for (const auto& row : r) out.push_back(device_from_row(row));
+  return out;
+}
+
+std::vector<Device> Repository::active_devices() {
+  if (!has_device_tables_) return {};
+  pqxx::work txn(conn_);
+  pqxx::result r =
+      txn.exec(std::string("SELECT ") + kDeviceCols +
+               " FROM devices WHERE status='active' ORDER BY id ASC");
+  txn.commit();
+  std::vector<Device> out;
+  out.reserve(r.size());
+  for (const auto& row : r) out.push_back(device_from_row(row));
+  return out;
+}
+
+std::optional<Device> Repository::founding_device() {
+  if (!has_device_tables_) return std::nullopt;
+  pqxx::work txn(conn_);
+  pqxx::result r = txn.exec(std::string("SELECT ") + kDeviceCols +
+                            " FROM devices ORDER BY id ASC LIMIT 1");
+  txn.commit();
+  if (r.empty()) return std::nullopt;
+  return device_from_row(r[0]);
+}
+
+std::int64_t Repository::add_device(const Device& d) {
+  if (!has_device_tables_) {
+    throw std::runtime_error(
+        "device tables not migrated — run 'pwmgr migrate' first");
+  }
+  const std::string fpr = normalize_fingerprint(d.fingerprint);
+  if (fpr.empty()) {
+    throw std::invalid_argument("add_device: malformed fingerprint '" +
+                                d.fingerprint + "' (need 40 hex chars)");
+  }
+  std::string name(d.name), pk(d.public_key);
+  pqxx::work txn(conn_);
+  pqxx::result r = txn.exec(
+      "INSERT INTO devices (name, fingerprint, public_key) VALUES ($1,$2,$3) "
+      "RETURNING id",
+      pqxx::params{name, fpr, pk});
+  txn.commit();
+  return r[0][0].as<std::int64_t>();
+}
+
+bool Repository::revoke_device(std::string_view name) {
+  if (!has_device_tables_) return false;
+  std::string nm(name);
+  pqxx::work txn(conn_);
+  pqxx::result r = txn.exec(
+      "UPDATE devices SET status='revoked', revoked_at=now() "
+      "WHERE name=$1 AND status='active' RETURNING id",
+      pqxx::params{nm});
+  if (r.empty()) return false;  // txn dtor aborts; nothing changed
+  txn.exec("DELETE FROM password_keys WHERE device_id=$1",
+           pqxx::params{r[0][0].as<std::int64_t>()});
+  txn.commit();
+  return true;
+}
+
+std::optional<std::string> Repository::wrapped_key_for(
+    std::int64_t password_id, std::string_view fingerprint) {
+  const std::string fpr = normalize_fingerprint(fingerprint);
+  if (has_device_tables_ && !fpr.empty()) {
+    pqxx::work txn(conn_);
+    pqxx::result r = txn.exec(
+        "SELECT convert_from(pk.wrapped_key,'UTF8') FROM password_keys pk "
+        "JOIN devices d ON d.id = pk.device_id "
+        "WHERE pk.password_id=$1 AND d.fingerprint=$2 AND d.status='active'",
+        pqxx::params{password_id, fpr});
+    txn.commit();
+    if (r.size() == 1) return r[0][0].as<std::string>();
+  }
+  // Unconditional legacy fallback: the founding wrap in passwords.aes_key.
+  pqxx::work txn(conn_);
+  pqxx::result r =
+      txn.exec("SELECT convert_from(aes_key,'UTF8') FROM passwords WHERE id=$1",
+               pqxx::params{password_id});
+  txn.commit();
+  if (r.size() != 1) return std::nullopt;
+  return r[0][0].as<std::string>();
+}
+
+void Repository::insert_wrapped_key(std::int64_t password_id,
+                                    std::int64_t device_id,
+                                    std::string_view wrapped_armored) {
+  if (!has_device_tables_) {
+    throw std::runtime_error(
+        "device tables not migrated — run 'pwmgr migrate' first");
+  }
+  std::string wk(wrapped_armored);
+  pqxx::work txn(conn_);
+  txn.exec(
+      "INSERT INTO password_keys (password_id, device_id, wrapped_key) VALUES "
+      "($1,$2,$3) ON CONFLICT (password_id, device_id) DO NOTHING",
+      pqxx::params{password_id, device_id, wk});
+  txn.commit();
+}
+
+std::vector<std::int64_t> Repository::all_entry_ids() {
+  pqxx::work txn(conn_);
+  pqxx::result r = txn.exec("SELECT id FROM passwords ORDER BY id ASC");
+  txn.commit();
+  std::vector<std::int64_t> out;
+  out.reserve(r.size());
+  for (const auto& row : r) out.push_back(row[0].as<std::int64_t>());
+  return out;
+}
+
+std::vector<std::int64_t> Repository::entry_ids_wrapped_for(
+    std::int64_t device_id) {
+  if (!has_device_tables_) return {};
+  pqxx::work txn(conn_);
+  pqxx::result r = txn.exec(
+      "SELECT password_id FROM password_keys WHERE device_id=$1 ORDER BY "
+      "password_id ASC",
+      pqxx::params{device_id});
+  txn.commit();
+  std::vector<std::int64_t> out;
+  out.reserve(r.size());
+  for (const auto& row : r) out.push_back(row[0].as<std::int64_t>());
+  return out;
+}
+
+void Repository::replace_entry_keys(std::int64_t id,
+                                    std::string_view password_blob,
+                                    std::string_view founding_wrap_armored,
+                                    int enc_version,
+                                    const std::vector<WrappedKey>& wraps) {
+  if (!has_device_tables_ && !wraps.empty()) {
+    throw std::runtime_error(
+        "device tables not migrated; refusing to drop per-device wraps");
+  }
+  std::string pb(password_blob), ak(founding_wrap_armored);
+  pqxx::work txn(conn_);
+  pqxx::result r =
+      has_enc_version_
+          ? txn.exec(
+                "UPDATE passwords SET password=$1, aes_key=$2, enc_version=$3 "
+                "WHERE id=$4 RETURNING id",
+                pqxx::params{pb, ak, enc_version, id})
+          : txn.exec(
+                "UPDATE passwords SET password=$1, aes_key=$2 WHERE id=$3 "
+                "RETURNING id",
+                pqxx::params{pb, ak, id});
+  if (r.empty()) {
+    throw std::runtime_error("replace_entry_keys: entry " + std::to_string(id) +
+                             " does not exist");
+  }
+  if (has_device_tables_) {
+    txn.exec("DELETE FROM password_keys WHERE password_id=$1", pqxx::params{id});
+    for (const auto& w : wraps) {
+      std::string wk(w.armored);
+      txn.exec(
+          "INSERT INTO password_keys (password_id, device_id, wrapped_key) "
+          "VALUES ($1,$2,$3)",
+          pqxx::params{id, w.device_id, wk});
+    }
+  }
+  txn.commit();
+}
+
+std::int64_t Repository::insert_entry_with_keys(
+    std::string_view password_blob, std::string_view founding_wrap_armored,
+    std::string_view note, int enc_version,
+    const std::vector<WrappedKey>& wraps) {
+  if (!has_device_tables_ && !wraps.empty()) {
+    throw std::runtime_error(
+        "device tables not migrated; refusing to drop per-device wraps");
+  }
+  std::string pb(password_blob), ak(founding_wrap_armored), nt(note);
+  pqxx::work txn(conn_);
+  pqxx::result r =
+      has_enc_version_
+          ? txn.exec(
+                "INSERT INTO passwords (password, aes_key, note, enc_version) "
+                "VALUES ($1,$2,$3,$4) RETURNING id",
+                pqxx::params{pb, ak, nt, enc_version})
+          : txn.exec(
+                "INSERT INTO passwords (password, aes_key, note) VALUES "
+                "($1,$2,$3) RETURNING id",
+                pqxx::params{pb, ak, nt});
+  const std::int64_t id = r[0][0].as<std::int64_t>();
+  for (const auto& w : wraps) {
+    std::string wk(w.armored);
+    txn.exec(
+        "INSERT INTO password_keys (password_id, device_id, wrapped_key) "
+        "VALUES ($1,$2,$3)",
+        pqxx::params{id, w.device_id, wk});
+  }
+  txn.commit();
+  return id;
 }
 
 std::optional<std::string> Repository::find_user_by_key_or_username(

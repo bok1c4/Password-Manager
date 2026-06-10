@@ -153,3 +153,92 @@ TEST_CASE_GATED("devices: migration v2 registers founding + backfills; idempoten
   // The invariant: the passwords table is bit-identical throughout.
   CHECK_EQ(snapshot_passwords(cs), before);
 }
+
+TEST_CASE_GATED("devices: unmigrated degradation contract") {
+  std::string cs = guarded_conn();
+  reset_base_schema(cs);
+  seed_legacy_row(cs, "legacyblob", "LEGACY-SENTINEL", "site");
+  Repository repo(cs);
+  REQUIRE(!repo.has_device_tables());
+
+  CHECK(repo.list_devices().empty());
+  CHECK(repo.active_devices().empty());
+  CHECK(!repo.founding_device().has_value());
+  CHECK(repo.entry_ids_wrapped_for(1).empty());
+  auto wrap = repo.wrapped_key_for(1, kFprA);
+  REQUIRE(wrap.has_value());
+  CHECK_EQ(*wrap, std::string("LEGACY-SENTINEL"));
+  CHECK(!repo.revoke_device("anything"));
+  CHECK_THROWS(repo.add_device({0, "x", kFprB, "PK", "active", ""}));
+  CHECK_THROWS(repo.insert_wrapped_key(1, 1, "W"));
+  CHECK_THROWS(repo.replace_entry_keys(1, "v2:new", "NEWWRAP", 2,
+                                       {WrappedKey{1, "W"}}));
+  // Empty wraps degrade to legacy-equivalent SQL.
+  repo.replace_entry_keys(1, "v2:new", "NEWWRAP", 2, {});
+  CHECK_EQ(*repo.wrapped_key_for(1, kFprA), std::string("NEWWRAP"));
+}
+
+TEST_CASE_GATED("devices: three read shapes + wrap API + revoke") {
+  std::string cs = guarded_conn();
+  reset_base_schema(cs);
+  seed_legacy_row(cs, "legacyblob1", "FOUNDING-WRAP-1", "one");
+  Repository repo(cs);
+  repo.apply_migrations();
+  repo.apply_migrations_v2({"deviceA", kFprA, "PUBKEY-A"});
+
+  // Enroll a second device.
+  std::int64_t devB = repo.add_device({0, "deviceB", kFprB, "PUBKEY-B", "", ""});
+  CHECK(devB > 0);
+  CHECK_EQ(repo.list_devices().size(), static_cast<std::size_t>(2));
+  CHECK_EQ(repo.active_devices().size(), static_cast<std::size_t>(2));
+  REQUIRE(repo.founding_device().has_value());
+  CHECK_EQ(repo.founding_device()->name, std::string("deviceA"));
+
+  // Shape 1: backfilled copy for A; legacy fallback content identical.
+  CHECK_EQ(*repo.wrapped_key_for(1, kFprA), std::string("FOUNDING-WRAP-1"));
+  // Shape 2: B has no wrap yet -> falls back to the legacy aes_key.
+  CHECK_EQ(*repo.wrapped_key_for(1, kFprB), std::string("FOUNDING-WRAP-1"));
+  // Wrap for B; now B reads its own wrap.
+  repo.insert_wrapped_key(1, devB, "WRAP-FOR-B");
+  CHECK_EQ(*repo.wrapped_key_for(1, kFprB), std::string("WRAP-FOR-B"));
+  // Idempotent double insert: still one row, original content.
+  repo.insert_wrapped_key(1, devB, "WRAP-FOR-B-DUP");
+  CHECK_EQ(*repo.wrapped_key_for(1, kFprB), std::string("WRAP-FOR-B"));
+  auto ids = repo.entry_ids_wrapped_for(devB);
+  REQUIRE(ids.size() == 1);
+  CHECK_EQ(ids[0], static_cast<std::int64_t>(1));
+
+  // insert_entry_with_keys: one txn, wraps queryable per device.
+  std::int64_t id2 = repo.insert_entry_with_keys(
+      "v2:blob2", "FOUNDING-WRAP-2", "two", 2,
+      {WrappedKey{repo.founding_device()->id, "A-WRAP-2"},
+       WrappedKey{devB, "B-WRAP-2"}});
+  CHECK(id2 > 0);
+  CHECK_EQ(*repo.wrapped_key_for(id2, kFprA), std::string("A-WRAP-2"));
+  CHECK_EQ(*repo.wrapped_key_for(id2, kFprB), std::string("B-WRAP-2"));
+
+  // replace_entry_keys: atomic swap to exactly the given wraps.
+  repo.replace_entry_keys(id2, "v2:blob2-rot", "FOUNDING-WRAP-2R", 2,
+                          {WrappedKey{devB, "B-WRAP-2R"}});
+  auto e2 = repo.get_entry(id2);
+  REQUIRE(e2.has_value());
+  CHECK_EQ(e2->password_blob, std::string("v2:blob2-rot"));
+  CHECK_EQ(e2->aes_key_armored, std::string("FOUNDING-WRAP-2R"));
+  CHECK_EQ(*repo.wrapped_key_for(id2, kFprB), std::string("B-WRAP-2R"));
+  // A's wrap is gone -> falls back to the legacy column.
+  CHECK_EQ(*repo.wrapped_key_for(id2, kFprA), std::string("FOUNDING-WRAP-2R"));
+  // Nonexistent id throws (RETURNING guard), nothing committed.
+  CHECK_THROWS(repo.replace_entry_keys(999999, "x", "y", 2, {}));
+
+  // Revoke B: status flips, wraps deleted, reads fall back to legacy.
+  CHECK(repo.revoke_device("deviceB"));
+  CHECK_EQ(repo.active_devices().size(), static_cast<std::size_t>(1));
+  CHECK(repo.entry_ids_wrapped_for(devB).empty());
+  CHECK_EQ(*repo.wrapped_key_for(1, kFprB), std::string("FOUNDING-WRAP-1"));
+  // Unknown / already-revoked names refuse.
+  CHECK(!repo.revoke_device("deviceB"));
+  CHECK(!repo.revoke_device("no-such-device"));
+
+  // Malformed fingerprint rejected before any SQL.
+  CHECK_THROWS(repo.add_device({0, "bad", "SHORT", "PK", "", ""}));
+}
