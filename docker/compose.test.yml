@@ -1,0 +1,59 @@
+# Two-device rehearsal rig (MULTI_DEVICE_PLAN.md §5 item 3): db + deviceA +
+# deviceB, each device with its OWN ephemeral no-passphrase GPG key generated
+# on boot. Zero real secrets; the DB is tmpfs-backed and has NO host ports.
+# Driven by scripts/test-two-devices.sh (make test-devices).
+name: pwmgr-test
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: pwmgr
+      POSTGRES_PASSWORD: test-only
+      POSTGRES_DB: pwmgr_test
+    # postgres:18 keeps PGDATA under /var/lib/postgresql/18/docker — mount the
+    # parent so the whole tree is tmpfs (nothing persists between runs).
+    tmpfs:
+      - /var/lib/postgresql
+    volumes:
+      - ../scripts/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+    healthcheck:
+      # -h 127.0.0.1 (TCP): the init-phase temp server is socket-only, so TCP
+      # readiness implies the FINAL server — no race with `pwmgr migrate`.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U pwmgr -d pwmgr_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  deviceA:
+    build:
+      context: ..
+    image: pwmgr-test:local
+    entrypoint: ["/device-entrypoint.sh"]
+    environment:
+      DEVICE_NAME: deviceA
+      PWMGR_CONFIG: /config/config.json
+    volumes:
+      - ./device-entrypoint.sh:/device-entrypoint.sh:ro
+      - shared:/shared
+    depends_on:
+      db:
+        condition: service_healthy
+
+  deviceB:
+    image: pwmgr-test:local
+    entrypoint: ["/device-entrypoint.sh"]
+    environment:
+      DEVICE_NAME: deviceB
+      PWMGR_CONFIG: /config/config.json
+    volumes:
+      - ./device-entrypoint.sh:/device-entrypoint.sh:ro
+      - shared:/shared
+    depends_on:
+      db:
+        condition: service_healthy
+      deviceA:
+        condition: service_started
+
+volumes:
+  shared:
