@@ -177,7 +177,12 @@ void EntryScreen::handle_input(const std::string& line) {
 
   if (line == "c" || line == "C") {
     try {
-      std::string secret = c_->enc->decrypt(e->password_blob, e->aes_key_armored);
+      // Per-device wrap when enrolled; unconditional legacy aes_key fallback
+      // keeps pre-migration DBs and the original v1 rows decrypting.
+      std::string wrap =
+          c_->repo->wrapped_key_for(e->id, c_->config->recipient_fingerprint())
+              .value_or(e->aes_key_armored);
+      std::string secret = c_->enc->decrypt(e->password_blob, wrap);
       std::string tool = copy_to_clipboard(secret, 20);
       OPENSSL_cleanse(secret.data(), secret.size());  // wipe local plaintext
       if (tool.empty())
@@ -190,7 +195,12 @@ void EntryScreen::handle_input(const std::string& line) {
     pause();
   } else if (line == "s" || line == "S") {
     try {
-      std::string secret = c_->enc->decrypt(e->password_blob, e->aes_key_armored);
+      // Per-device wrap when enrolled; unconditional legacy aes_key fallback
+      // keeps pre-migration DBs and the original v1 rows decrypting.
+      std::string wrap =
+          c_->repo->wrapped_key_for(e->id, c_->config->recipient_fingerprint())
+              .value_or(e->aes_key_armored);
+      std::string secret = c_->enc->decrypt(e->password_blob, wrap);
       // Alternate screen buffer: keeps the plaintext out of normal scrollback.
       std::cout << "\033[?1049h\033[2J\033[H";
       std::cout << "Password for entry #" << id_ << ":\n\n  ";
