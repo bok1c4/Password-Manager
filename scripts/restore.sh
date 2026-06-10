@@ -14,7 +14,12 @@ PGUSER="${PGUSER:-pwmgr}"
 PGDATABASE="${PGDATABASE:-pwmgr}"
 
 if [ "$MODE" != "PRODUCTION" ]; then
-  TDB="pwmgr_restore_test"
+  # Override for harness use; must look like a test DB, never production.
+  TDB="${PWMGR_RESTORE_DB:-pwmgr_restore_test}"
+  if [ "$TDB" = "pwmgr" ] || [[ "$TDB" != *test* ]]; then
+    echo "[!!] PWMGR_RESTORE_DB must contain 'test' and not be 'pwmgr'" >&2
+    exit 1
+  fi
   echo "[*] Restoring into throwaway DB '$TDB' (needs CREATEDB privilege)."
   dropdb -h "$PGHOST" -U "$PGUSER" --if-exists "$TDB"
   createdb -h "$PGHOST" -U "$PGUSER" "$TDB"
