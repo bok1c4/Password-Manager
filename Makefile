@@ -36,7 +36,11 @@ $(BUILD)/%.o: %.cpp
 test: $(BUILD)/pwmgr_tests
 	$(BUILD)/pwmgr_tests --no-gated
 
+# Sandboxed bash tests for the network-tooling scripts (no system contact).
+test-scripts:
+	bash tests/scripts/test_network_scripts.sh
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test clean
+.PHONY: all test test-scripts clean
