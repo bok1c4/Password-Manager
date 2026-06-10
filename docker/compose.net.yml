@@ -1,0 +1,48 @@
+# Tier-1 (LAN TLS) negative-test rig (REMOTE.md §2 acceptance): a throwaway
+# TLS-only Postgres + an idle psql client container. Driven by
+# scripts/test-net-negative.sh (make test-net), which generates the certs and
+# pg_hba into $PWMGR_NET_DIR first. No host ports; tmpfs data.
+#
+# The pg_hba used here applies the same MECHANISM REMOTE.md §2.4 prescribes
+# (hostssl + scram, no trust over TCP); the scope is intentionally widened
+# for the throwaway rig (REMOTE.md scopes by db/user/subnet). The `local`
+# trust line is required by the image's init phase (unix socket) and does not
+# affect the TCP-facing assertions.
+name: pwmgr-net-test
+
+services:
+  db-tls:
+    image: postgres:18
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/certs/server.crt
+      - -c
+      - ssl_key_file=/certs/server.key
+      - -c
+      - hba_file=/certs/pg_hba.conf
+    environment:
+      POSTGRES_USER: pwmgr
+      POSTGRES_PASSWORD: net-test-pw
+      POSTGRES_DB: pwmgr_net_test
+    tmpfs:
+      - /var/lib/postgresql
+    volumes:
+      - ${PWMGR_NET_DIR:?run via scripts/test-net-negative.sh}/server:/certs:ro
+      - ../scripts/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U pwmgr -d pwmgr_net_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  client:
+    image: postgres:18
+    entrypoint: ["sleep", "infinity"]
+    volumes:
+      - ${PWMGR_NET_DIR:?}/client:/certs:ro
+    depends_on:
+      db-tls:
+        condition: service_healthy

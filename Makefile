@@ -49,7 +49,11 @@ test-devices:
 test-staging: $(BUILD)/pwmgr
 	bash scripts/staging-rehearsal.sh
 
+# Tier-1 LAN TLS negative tests on a throwaway docker rig.
+test-net:
+	bash scripts/test-net-negative.sh
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test test-scripts test-devices test-staging clean
+.PHONY: all test test-scripts test-devices test-staging test-net clean
