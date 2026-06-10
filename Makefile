@@ -40,7 +40,16 @@ test: $(BUILD)/pwmgr_tests
 test-scripts:
 	bash tests/scripts/test_network_scripts.sh
 
+# Two-device docker lifecycle rehearsal (builds inside the image; throwaway DB).
+test-devices:
+	bash scripts/test-two-devices.sh
+
+# Staging rehearsal: restore latest dump into pwmgr_test, migrate, assert
+# bit-identical passwords (needs a prior host `make` + a dump).
+test-staging: $(BUILD)/pwmgr
+	bash scripts/staging-rehearsal.sh
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test test-scripts clean
+.PHONY: all test test-scripts test-devices test-staging clean
