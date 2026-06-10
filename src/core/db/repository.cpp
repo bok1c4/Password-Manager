@@ -4,6 +4,7 @@ namespace pwmgr::db {
 
 Repository::Repository(const std::string& conn_str) : conn_(conn_str) {
   has_enc_version_ = detect_enc_version();
+  has_device_tables_ = detect_device_tables();
 }
 
 bool Repository::detect_enc_version() {
@@ -12,6 +13,22 @@ bool Repository::detect_enc_version() {
     pqxx::result r = txn.exec(
         "SELECT 1 FROM information_schema.columns WHERE table_name='passwords' "
         "AND column_name='enc_version' LIMIT 1");
+    txn.commit();
+    return !r.empty();
+  } catch (...) {
+    return false;
+  }
+}
+
+bool Repository::detect_device_tables() {
+  try {
+    pqxx::work txn(conn_);
+    // Both tables must exist; scoped to the current schema so a stray table
+    // elsewhere cannot double-count.
+    pqxx::result r = txn.exec(
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema = current_schema() "
+        "AND table_name IN ('devices','password_keys') HAVING count(*) = 2");
     txn.commit();
     return !r.empty();
   } catch (...) {
@@ -42,6 +59,55 @@ void Repository::apply_migrations() {
   txn.exec("INSERT INTO schema_migrations(version) VALUES (1) ON CONFLICT DO NOTHING");
   txn.commit();
   has_enc_version_ = true;
+}
+
+void Repository::apply_migrations_v2(const FoundingDevice& founding) {
+  const std::string fpr = normalize_fingerprint(founding.fingerprint);
+  pqxx::work txn(conn_);
+  txn.exec("SET LOCAL lock_timeout = '5s'");
+  txn.exec("SET LOCAL statement_timeout = '30s'");
+  txn.exec(
+      "CREATE TABLE IF NOT EXISTS devices ("
+      "  id           bigserial PRIMARY KEY,"
+      "  name         text   UNIQUE NOT NULL,"
+      "  fingerprint  char(40) UNIQUE NOT NULL,"
+      "  public_key   text   NOT NULL,"
+      "  status       text   NOT NULL DEFAULT 'active',"
+      "  enrolled_at  timestamptz NOT NULL DEFAULT now(),"
+      "  revoked_at   timestamptz)");
+  txn.exec(
+      "CREATE TABLE IF NOT EXISTS password_keys ("
+      "  password_id  bigint NOT NULL REFERENCES passwords(id) ON DELETE CASCADE,"
+      "  device_id    bigint NOT NULL REFERENCES devices(id),"
+      "  wrapped_key  bytea  NOT NULL,"
+      "  created_at   timestamptz NOT NULL DEFAULT now(),"
+      "  PRIMARY KEY (password_id, device_id))");
+  // An invalid/empty fingerprint skips registration + backfill; the tables are
+  // still created so the probe flips and the device API becomes usable.
+  if (!fpr.empty()) {
+    // Register the founding device ONLY on an empty table: an enrolled second
+    // device running `migrate` must never self-enroll as founding.
+    txn.exec(
+        "INSERT INTO devices (name, fingerprint, public_key) "
+        "SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM devices) "
+        "ON CONFLICT (fingerprint) DO NOTHING",
+        pqxx::params{founding.name, fpr, founding.public_key_armored});
+    // Backfill: COPY the legacy wrap into the access matrix. aes_key is by
+    // definition wrapped to the FOUNDING key, so the copy only ever targets
+    // the lowest-id device — a later device re-running `migrate` with its own
+    // fingerprint must not be credited with wraps it cannot decrypt.
+    txn.exec(
+        "INSERT INTO password_keys (password_id, device_id, wrapped_key) "
+        "SELECT p.id, d.id, p.aes_key FROM passwords p CROSS JOIN devices d "
+        "WHERE d.fingerprint = $1 AND d.id = (SELECT min(id) FROM devices) "
+        "ON CONFLICT (password_id, device_id) DO NOTHING",
+        pqxx::params{fpr});
+  }
+  txn.exec(
+      "INSERT INTO schema_migrations(version) VALUES (2) ON CONFLICT DO "
+      "NOTHING");
+  txn.commit();
+  has_device_tables_ = true;
 }
 
 std::vector<NoteRow> Repository::list_notes() {
