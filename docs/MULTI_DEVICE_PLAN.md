@@ -175,22 +175,22 @@ far less new code, and the threat model already tolerates a curious server.
 2. **Gated repository tests** against a throwaway DB (existing guard: dbname
    must contain `test`): devices CRUD; backfill idempotency; the three read
    shapes — legacy-only row, `password_keys`-only row, both.
-3. **Two-device simulation in Docker** — the key rehearsal. Compose file:
-   `db` + two `app` containers, each generating its *own ephemeral* GPG key
-   on first run, seeded with dummy entries. Scripted assertions:
-   A creates entry → enroll B → **B decrypts it**; revoke B + rotate →
-   **B can no longer decrypt anything**. Whole lifecycle proven with zero
-   real secrets.
-4. **Staging rehearsal on real data:** `scripts/restore.sh` the latest prod
-   dump into `pwmgr_test`, run the migration there, then (gated — needs your
-   passphrase) decrypt the known compat row (`~/pwmgr-backups/compat_id1_*`)
-   and spot-check all 13 legacy rows still read. Assert the `passwords` table
-   bytes are bit-identical pre/post migration.
-5. **Network tier rehearsal:** Tier 1 — connect from a container with the
-   LAN config and `verify-full`; negative test: non-TLS and wrong-CA
-   connections must fail. Tier 2 — bring up the onion service, connect from a
-   container with *no* LAN route, only tor; negative test: connection without
-   the client-auth key must fail.
+3. **Two-device simulation in Docker** — the key rehearsal
+   (→ `make test-devices`). Compose file: `db` + two device containers, each
+   generating its *own ephemeral* GPG key on first run, seeded with dummy
+   entries. Scripted assertions: A creates entries → enroll B →
+   **B decrypts them**; revoke B + rotate → **B can no longer decrypt
+   anything**. Whole lifecycle proven with zero real secrets.
+4. **Staging rehearsal on real data** (→ `make test-staging`;
+   `PWMGR_STAGING_DECRYPT=1` for the gated decrypt pass): restore the latest
+   prod dump into `pwmgr_test`, run `pwmgr migrate` there, decrypt every
+   restored row (covers the known compat row id 1). Asserts the `passwords`
+   table bytes are bit-identical pre/post migration.
+5. **Network tier rehearsal:** Tier 1 (→ `make test-net`) — plaintext,
+   wrong-CA and wrong-password connections refused; `verify-full` connects
+   (psql and the pwmgr client itself). Tier 2 — **manual only** (tests never
+   enable tor): onion service up, connect from a device with *no* LAN route,
+   only tor; negative: connection without the client-auth key must fail.
 6. **Production, in order:** fresh backup → apply additive migration → verify
    reads on device 1 → enroll the real second device → verify on device 2.
 
