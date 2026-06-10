@@ -130,4 +130,105 @@ bool gpg_has_secret_key(std::string_view fingerprint) {
   }
 }
 
+bool gpg_has_public_key(std::string_view fingerprint) {
+  try {
+    Ctx ctx;
+    std::string fpr(fingerprint);
+    gpgme_key_t key = nullptr;
+    gpgme_error_t err = gpgme_get_key(ctx, fpr.c_str(), &key, 0);
+    bool found = (err == GPG_ERR_NO_ERROR && key != nullptr);
+    if (key) gpgme_key_unref(key);
+    return found;
+  } catch (...) {
+    return false;
+  }
+}
+
+std::string gpg_inspect_public_key(std::string_view armored) {
+  // Cheap textual gate first: an armored secret-key export announces itself.
+  // (Defense in depth in case the keylisting below does not flag `secret`.)
+  if (armored.find("PRIVATE KEY BLOCK") != std::string_view::npos) {
+    throw std::runtime_error(
+        "Refusing key data containing SECRET key material — secret keys must "
+        "never leave their device. Export with `gpg --export --armor <fpr>`.");
+  }
+  Ctx ctx;
+  Data data(armored);
+  gpgme_error_t err = gpgme_op_keylist_from_data_start(ctx, data, 0);
+  if (err != GPG_ERR_NO_ERROR) {
+    throw std::runtime_error(std::string("GPG key inspection failed: ") +
+                             gpgme_strerror(err));
+  }
+  std::string fpr;
+  int primaries = 0;
+  gpgme_key_t key = nullptr;
+  while (gpgme_op_keylist_next(ctx, &key) == GPG_ERR_NO_ERROR) {
+    ++primaries;
+    const bool is_secret = key->secret != 0;
+    if (primaries == 1 && key->fpr) fpr = key->fpr;
+    gpgme_key_unref(key);
+    if (is_secret) {
+      gpgme_op_keylist_end(ctx);
+      throw std::runtime_error(
+          "Refusing key data containing SECRET key material — secret keys "
+          "must never leave their device.");
+    }
+  }
+  gpgme_op_keylist_end(ctx);
+  if (primaries == 0)
+    throw std::runtime_error("No OpenPGP public key found in the data");
+  if (primaries > 1)
+    throw std::runtime_error(
+        "Expected exactly one public key in the data, found " +
+        std::to_string(primaries));
+  if (fpr.empty())
+    throw std::runtime_error("Inspected key carries no fingerprint");
+  return fpr;
+}
+
+std::string gpg_import_public_key(std::string_view armored) {
+  const std::string fpr = gpg_inspect_public_key(armored);
+
+  Ctx ctx;
+  Data data(armored);  // fresh buffer: inspection consumed the previous one
+  gpgme_error_t err = gpgme_op_import(ctx, data);
+  if (err != GPG_ERR_NO_ERROR) {
+    throw std::runtime_error(std::string("GPG import failed: ") +
+                             gpgme_strerror(err));
+  }
+  gpgme_import_result_t res = gpgme_op_import_result(ctx);
+  if (res == nullptr || res->considered == 0) {
+    throw std::runtime_error("GPG import: no keys considered");
+  }
+  bool seen = false;
+  for (gpgme_import_status_t st = res->imports; st != nullptr; st = st->next) {
+    if (st->fpr && fpr == st->fpr) {
+      seen = true;
+      break;
+    }
+  }
+  if (!seen) {
+    throw std::runtime_error(
+        "GPG import: imported fingerprint does not match the inspected data");
+  }
+  return fpr;
+}
+
+std::string gpg_export_public_key(std::string_view fingerprint) {
+  Ctx ctx;
+  gpgme_set_armor(ctx, 1);
+  std::string fpr(fingerprint);
+  Data out;
+  gpgme_error_t err = gpgme_op_export(ctx, fpr.c_str(), 0, out);
+  if (err != GPG_ERR_NO_ERROR) {
+    throw std::runtime_error(std::string("GPG export failed: ") +
+                             gpgme_strerror(err));
+  }
+  std::string armored = read_all(out);
+  if (armored.empty()) {
+    throw std::runtime_error("No public key in keyring for fingerprint " + fpr);
+  }
+  return armored;
+}
+
 }  // namespace pwmgr::crypto
