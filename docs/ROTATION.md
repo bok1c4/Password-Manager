@@ -12,8 +12,8 @@ gpg --export-secret-keys --armor <FINGERPRINT> > /secure/offline/pwmgr-key.asc
 Without it, restored database rows are ciphertext you can never open.
 
 ## Rotate the database password (deferred, do when ready)
-The old password `temp123` is in git history and the working password has been
-seen in plaintext. To rotate:
+Only the old dummy password `temp123` is in git history — the working password
+was never committed, but it lives in plaintext in the local config. To rotate:
 
 ```sql
 ALTER ROLE pwmgr WITH PASSWORD '<new-strong-password>';
