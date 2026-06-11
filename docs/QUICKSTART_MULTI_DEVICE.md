@@ -1,6 +1,7 @@
 # Quick Guide — Using the Vault Across Devices (LAN + Tor Onion)
 
-This is the condensed, copy-paste version. Full background:
+This is the condensed, copy-paste version. The full in-depth walkthrough is
+[DEPLOYMENT.md](DEPLOYMENT.md). Background:
 [MULTI_DEVICE_PLAN.md](MULTI_DEVICE_PLAN.md) (design),
 [REMOTE.md](REMOTE.md) (network details), [USAGE.md](USAGE.md) (daily use).
 

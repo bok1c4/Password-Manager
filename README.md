@@ -132,7 +132,8 @@ PWMGR_TEST_DB="host=localhost dbname=pwmgr_test user=... password=..." build/mak
 ## Multi-device (LAN + Tor onion)
 The vault can be shared across devices — each with its own GPG key — over
 the local network or a Tor onion service. Quick setup guide:
-**`docs/QUICKSTART_MULTI_DEVICE.md`** (design: `docs/MULTI_DEVICE_PLAN.md`,
+**`docs/QUICKSTART_MULTI_DEVICE.md`**; full step-by-step deployment walkthrough:
+**`docs/DEPLOYMENT.md`** (design: `docs/MULTI_DEVICE_PLAN.md`,
 network spec: `docs/REMOTE.md`).
 
 ## Backups & security
