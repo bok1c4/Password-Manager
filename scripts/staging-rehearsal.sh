@@ -72,7 +72,10 @@ snapshot() { # <outfile>
   psql -h "$PGHOST" -U "$PGUSER" -d "$SDB" --csv -c \
     "SELECT id, password, encode(aes_key,'base64'), note, created_at, enc_version
      FROM passwords ORDER BY id" > "$1.csv"
-  pg_dump -h "$PGHOST" -U "$PGUSER" --data-only --table=passwords "$SDB" > "$1.dump"
+  # pg_dump 18 emits a RANDOM \restrict token per dump — strip it or two
+  # dumps of identical data never byte-compare equal.
+  pg_dump -h "$PGHOST" -U "$PGUSER" --data-only --table=passwords "$SDB" \
+    | grep -vE '^\\(un)?restrict ' > "$1.dump"
 }
 
 echo "[*] snapshot BEFORE migrate"
