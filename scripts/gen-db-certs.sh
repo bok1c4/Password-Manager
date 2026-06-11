@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Mini-CA + PostgreSQL server certificate for the LAN tier (docs/REMOTE.md §2,
-# MULTI_DEVICE_PLAN.md Phase 3 step 2).
+# Mini-CA + PostgreSQL server certificate for the LAN tier (docs/DEPLOYMENT.md §A2).
 #
 #   scripts/gen-db-certs.sh <lan-ip-or-hostname> [extra-san ...]
 #

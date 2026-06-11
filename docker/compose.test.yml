@@ -1,4 +1,4 @@
-# Two-device rehearsal rig (MULTI_DEVICE_PLAN.md §5 item 3): db + deviceA +
+# Two-device rehearsal rig: db + deviceA +
 # deviceB, each device with its OWN ephemeral no-passphrase GPG key generated
 # on boot. Zero real secrets; the DB is tmpfs-backed and has NO host ports.
 # Driven by scripts/test-two-devices.sh (make test-devices).

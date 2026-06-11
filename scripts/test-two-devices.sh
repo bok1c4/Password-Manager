@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Two-device lifecycle rehearsal (MULTI_DEVICE_PLAN.md §5 item 3) against the
+# Two-device lifecycle rehearsal against the
 # docker rig in docker/compose.test.yml — ZERO real secrets, throwaway DB.
 #
 # The five assertions:

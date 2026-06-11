@@ -1,11 +1,11 @@
-# Tier-1 (LAN TLS) negative-test rig (REMOTE.md §2 acceptance): a throwaway
+# Tier-1 (LAN TLS) negative-test rig (docs/DEPLOYMENT.md Part A acceptance): a throwaway
 # TLS-only Postgres + an idle psql client container. Driven by
 # scripts/test-net-negative.sh (make test-net), which generates the certs and
 # pg_hba into $PWMGR_NET_DIR first. No host ports; tmpfs data.
 #
-# The pg_hba used here applies the same MECHANISM REMOTE.md §2.4 prescribes
+# The pg_hba used here applies the same MECHANISM docs/DEPLOYMENT.md §A3 prescribes
 # (hostssl + scram, no trust over TCP); the scope is intentionally widened
-# for the throwaway rig (REMOTE.md scopes by db/user/subnet). The `local`
+# for the throwaway rig (the real policy scopes by db/user/subnet). The `local`
 # trust line is required by the image's init phase (unix socket) and does not
 # affect the TCP-facing assertions.
 name: pwmgr-net-test

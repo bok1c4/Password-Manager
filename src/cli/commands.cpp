@@ -37,7 +37,7 @@ void print_incomplete_warning(const std::string& name) {
             << "' may hold cached keys. Run 'pwmgr rotate' to finish.\n";
 }
 
-// REMOTE.md §5: the parts of revocation that live outside the database.
+// The parts of revocation that live outside the database (docs/DEPLOYMENT.md).
 void print_revoke_checklist(const std::string& name) {
   std::cerr
       << "[INFO] Finish revoking '" << name << "' outside the DB too:\n"
@@ -46,7 +46,7 @@ void print_revoke_checklist(const std::string& name) {
       << "       - rotate the shared Postgres password "
          "(scripts/rotate-db-password.sh --apply) — every enrolled device "
          "knows it\n"
-      << "       (docs/REMOTE.md section 5)\n";
+      << "       (docs/DEPLOYMENT.md)\n";
 }
 
 }  // namespace
@@ -299,7 +299,7 @@ int cmd_device_add(AppContext& ctx, const std::string& name,
   }
 
   std::cerr << "[INFO] Remote-access hand-over for '" << name
-            << "' (docs/REMOTE.md section 5):\n"
+            << "' (docs/DEPLOYMENT.md, Part B):\n"
                "       - issue its onion auth key: "
                "scripts/onion-auth-keygen.sh " << name << "\n"
                "       - hand over: onion address, ca.crt (LAN), socat unit "

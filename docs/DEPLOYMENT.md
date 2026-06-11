@@ -1,8 +1,7 @@
 # Deployment Guide — Exposing the Vault over LAN and Tor Onion
 
-The full, in-depth walkthrough of both transports, end to end. The condensed
-copy-paste version is [QUICKSTART_MULTI_DEVICE.md](QUICKSTART_MULTI_DEVICE.md);
-the network spec behind it is [REMOTE.md](REMOTE.md).
+The full, end-to-end setup of both transports. Daily use:
+[USAGE.md](USAGE.md); secret hygiene: [ROTATION.md](ROTATION.md).
 
 **The mental model first:** nothing gets "deployed" anywhere and there is no
 website, hosting account, domain, or port-forwarding involved. PostgreSQL stays
@@ -335,8 +334,19 @@ secure for this purpose.
 
 The full revocation checklist (revoke + ROTATE + delete the device's `.auth` +
 `systemctl reload tor` + DB password rotation) is printed by
-`pwmgr device revoke` itself and written up in
-[QUICKSTART_MULTI_DEVICE.md](QUICKSTART_MULTI_DEVICE.md) §4.
+`pwmgr device revoke` itself. A revoked name cannot be re-enrolled; a
+returning device gets a fresh key and a new name.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| `connection refused` on LAN | `listen_addresses` / firewall / wrong IP |
+| `no pg_hba.conf entry` | subnet line missing, or connecting without TLS |
+| certificate verify failed | wrong/missing `ca.crt`, or `host=` ≠ the SAN in the cert |
+| onion never connects | wait ~30 min after first start; check `.auth_private` perms (tor-owned, dir 0700); `systemctl --user status pwmgr-onion-forward` |
+| decrypt fails on a device | that device isn't enrolled (`pwmgr device list`), or wrong GPG key/passphrase |
+| `device tables not migrated` | run `pwmgr migrate` on the server (after `./scripts/backup.sh`) |
 
 One ordering note: **Part 0 → A → B** is the comfortable sequence (LAN first
 lets you debug enrollment with a fast connection before adding tor's latency),

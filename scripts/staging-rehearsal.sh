@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Staging rehearsal on a COPY of real data (MULTI_DEVICE_PLAN.md §5 item 4):
+# Staging rehearsal on a COPY of real data (pre-prod migration rehearsal):
 # restore the latest prod dump into pwmgr_test, run `pwmgr migrate` there, and
 # prove the passwords table is BIT-IDENTICAL before/after (plus backfill shape
 # and idempotency). Production is never touched.

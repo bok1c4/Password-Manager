@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate one x25519 Tor v3 client-authorization keypair per device
-# (docs/REMOTE.md §3.2). Needs only openssl + python3. Prints two lines:
+# (docs/DEPLOYMENT.md §B2). Needs only openssl + python3. Prints two lines:
 #
 #   server side -> /var/lib/tor/pwmgr/authorized_clients/<device>.auth
 #   client side -> /var/lib/tor/onion_auth/pwmgr.auth_private  (the device

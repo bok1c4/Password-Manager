@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rotate the pwmgr database password safely (docs/REMOTE.md §2 step 1,
+# Rotate the pwmgr database password safely (docs/DEPLOYMENT.md §A1,
 # docs/ROTATION.md). Recommended before exposing Postgres to any network tier
 # and after revoking a device (every enrolled device knows the shared
 # password under the shared-role decision D3).

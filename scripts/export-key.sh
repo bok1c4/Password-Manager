@@ -40,7 +40,7 @@
 #    /var/lib/tor/pwmgr/hs_ed25519_secret_key IS the onion address — there is
 #    no seed phrase and no recovery; losing it means a new address rolled out
 #    to every device. Back up the whole HiddenServiceDir to the SAME offline
-#    encrypted media as this GPG key (docs/REMOTE.md section 3.3):
+#    encrypted media as this GPG key (docs/DEPLOYMENT.md §B3):
 #      sudo tar czf /run/media/$USER/MYUSB/pwmgr-onion-dir.tgz /var/lib/tor/pwmgr
 #
 #  PAPER BACKUP (optional, survives dead drives)

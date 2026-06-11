@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Idempotent server-side Tor onion-service setup for pwmgr (docs/REMOTE.md
-# §3.1). Appends the marker-guarded HiddenService block to torrc and prepares
+# Idempotent server-side Tor onion-service setup for pwmgr (docs/DEPLOYMENT.md
+# §B1). Appends the marker-guarded HiddenService block to torrc and prepares
 # the HiddenServiceDir — and that is ALL it does by itself:
 #
 #   - tor is NEVER enabled/started unless you pass an explicit --enable

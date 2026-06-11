@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tier-1 LAN TLS acceptance tests (REMOTE.md §2) on a throwaway docker rig:
+# Tier-1 LAN TLS acceptance tests (docs/DEPLOYMENT.md Part A) on a throwaway docker rig:
 #   41 plaintext connection refused
 #   42 wrong CA refused under verify-full
 #   43 wrong password refused (TLS fine, scram fails)
