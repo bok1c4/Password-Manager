@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -23,6 +24,13 @@ struct Entry {
   std::string note;
   std::string aes_key_armored;  // convert_from(aes_key,'UTF8')
   int enc_version;
+};
+
+// One cell of the access matrix: device_id can decrypt password_id. Mirrors a
+// password_keys row without the wrapped bytes — the CMS only needs the shape.
+struct WrapPair {
+  std::int64_t password_id;
+  std::int64_t device_id;
 };
 
 // Owns one long-lived libpqxx connection (RAII). All queries are parameterized.
@@ -78,6 +86,10 @@ class Repository {
   std::vector<std::int64_t> all_entry_ids();  // passwords.id ASC
   // Sorted (the enroll engine binary-searches it).
   std::vector<std::int64_t> entry_ids_wrapped_for(std::int64_t device_id);
+  // The WHOLE access matrix in one query: every (password_id, device_id) in
+  // password_keys, ascending by (password_id, device_id). The CMS pivots it
+  // both ways (per-entry devices, per-device counts). Empty pre-migration.
+  std::vector<WrapPair> wrap_pairs();
   // Rotate support, one txn: update blob + legacy wrap (+enc_version when the
   // column exists; throws if the id matched no row), then replace this entry's
   // password_keys rows with exactly `wraps` (plain INSERTs — a duplicate
@@ -122,5 +134,14 @@ class Repository {
   // contract on the multi-device API).
   bool has_device_tables_ = false;
 };
+
+// Pure pivots over a wrap_pairs() result — no DB, so the CMS aggregation is
+// unit-testable on its own. Both de-duplicate and return ascending ids.
+//   wraps_by_entry:  password_id -> device_ids that can decrypt it
+//   count_by_device: device_id   -> number of distinct entries it can decrypt
+std::map<std::int64_t, std::vector<std::int64_t>> wraps_by_entry(
+    const std::vector<WrapPair>& pairs);
+std::map<std::int64_t, std::int64_t> count_by_device(
+    const std::vector<WrapPair>& pairs);
 
 }  // namespace pwmgr::db

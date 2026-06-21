@@ -31,6 +31,11 @@ int run_command(const std::vector<std::string>& args, AppContext& ctx);
 int cmd_migrate(AppContext& ctx);
 int cmd_entry_add(AppContext& ctx, const std::string& note);
 int cmd_entry_show(AppContext& ctx, std::int64_t id);
+// CMS read views. entry_list: every entry + the devices that can decrypt it
+// (porcelain: id<TAB>ver<TAB>note<TAB>dev1,dev2). status: device/entry counts,
+// per-device decryptable coverage, and a deployment-readiness verdict.
+int cmd_entry_list(AppContext& ctx, bool porcelain);
+int cmd_status(AppContext& ctx);
 int cmd_device_list(AppContext& ctx, bool porcelain);
 // expected_fpr may be "" -> prompted on a TTY, usage error otherwise.
 int cmd_device_add(AppContext& ctx, const std::string& name,

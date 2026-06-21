@@ -1,8 +1,11 @@
 #include "screens.h"
 
+#include <cstdint>
 #include <iostream>
+#include <map>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <openssl/crypto.h>
 
@@ -100,9 +103,30 @@ void ListScreen::render() {
     if (rows.empty()) {
       std::cout << "  (no entries)\n";
     } else {
+      // Annotate each entry with the devices that can decrypt it (the access
+      // matrix). Pre-migration there are no device tables, so skip it.
+      const bool migrated = c_->repo->has_device_tables();
+      std::vector<db::Device> devices;
+      std::map<std::int64_t, const db::Device*> idx;
+      std::map<std::int64_t, std::vector<std::int64_t>> by_entry;
+      if (migrated) {
+        devices = c_->repo->list_devices();
+        for (const auto& d : devices) idx.emplace(d.id, &d);
+        by_entry = db::wraps_by_entry(c_->repo->wrap_pairs());
+      }
+      if (migrated)
+        std::cout << "  (-> = devices that can decrypt)\n";
       for (const auto& r : rows) {
-        std::cout << "  #" << r.id << "  [v" << r.enc_version << "]  " << r.note
-                  << "\n";
+        std::cout << "  #" << r.id << "  [v" << r.enc_version << "]  " << r.note;
+        if (migrated) {
+          std::string who;
+          if (auto it = by_entry.find(r.id); it != by_entry.end())
+            for (std::int64_t dev_id : it->second)
+              if (auto d = idx.find(dev_id); d != idx.end())
+                who += (who.empty() ? "" : ", ") + d->second->name;
+          std::cout << "\n        -> " << (who.empty() ? "(no devices)" : who);
+        }
+        std::cout << "\n";
       }
     }
   } catch (const std::exception& ex) {
@@ -281,9 +305,27 @@ void DevicesScreen::render() {
       if (devices.empty()) {
         std::cout << "  (no devices registered)\n";
       } else {
+        // Per-device decryptable coverage = rows of password_keys for it.
+        const std::int64_t total =
+            static_cast<std::int64_t>(c_->repo->all_entry_ids().size());
+        const auto counts = db::count_by_device(c_->repo->wrap_pairs());
+        bool gap = false;
         for (const auto& d : devices) {
+          std::int64_t c = 0;
+          if (auto it = counts.find(d.id); it != counts.end()) c = it->second;
+          if (d.status == "active" && c < total) gap = true;
           std::cout << "  #" << d.id << "  " << d.name << "  [" << d.status
-                    << "]\n      " << d.fingerprint << "\n";
+                    << "]  decrypts " << c << "/" << total << "\n      "
+                    << d.fingerprint << "\n";
+        }
+        if (total > 0) {
+          std::cout << "+--------------------------------------------+\n";
+          if (gap)
+            std::cout << "  [WARN] an active device is missing wraps — press "
+                         "[w] to rewrap\n";
+          else
+            std::cout << "  [OK] every active device can decrypt all " << total
+                      << " entries\n";
         }
       }
     }

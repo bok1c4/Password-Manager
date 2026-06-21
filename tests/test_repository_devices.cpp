@@ -242,3 +242,43 @@ TEST_CASE_GATED("devices: three read shapes + wrap API + revoke") {
   // Malformed fingerprint rejected before any SQL.
   CHECK_THROWS(repo.add_device({0, "bad", "SHORT", "PK", "", ""}));
 }
+
+TEST_CASE_GATED("devices: wrap_pairs feeds the CMS access matrix") {
+  std::string cs = guarded_conn();
+  reset_base_schema(cs);
+  seed_legacy_row(cs, "b1", "W1", "one");
+  seed_legacy_row(cs, "b2", "W2", "two");
+  Repository repo(cs);
+  repo.apply_migrations();
+  repo.apply_migrations_v2({"deviceA", kFprA, "PK-A"});
+  auto fa = repo.founding_device();
+  REQUIRE(fa.has_value());
+  std::int64_t devB = repo.add_device({0, "deviceB", kFprB, "PK-B", "", ""});
+
+  // Founding was backfilled both entries; B has no wraps yet.
+  {
+    auto pairs = repo.wrap_pairs();
+    CHECK_EQ(pairs.size(), static_cast<std::size_t>(2));
+    auto by_dev = count_by_device(pairs);
+    CHECK_EQ(by_dev[fa->id], static_cast<std::int64_t>(2));
+    CHECK_EQ(by_dev.count(devB), static_cast<std::size_t>(0));
+    auto by_entry = wraps_by_entry(pairs);
+    REQUIRE(by_entry[1].size() == static_cast<std::size_t>(1));
+    CHECK_EQ(by_entry[1][0], fa->id);
+  }
+
+  // Wrap entry 1 to B -> matrix gains exactly that cell, ascending by id.
+  repo.insert_wrapped_key(1, devB, "B-W1");
+  {
+    auto by_entry = wraps_by_entry(repo.wrap_pairs());
+    REQUIRE(by_entry[1].size() == static_cast<std::size_t>(2));
+    CHECK_EQ(by_entry[1][0], fa->id);
+    CHECK_EQ(by_entry[1][1], devB);
+    CHECK_EQ(count_by_device(repo.wrap_pairs())[devB], static_cast<std::int64_t>(1));
+  }
+
+  // Revoking B deletes its wraps -> it disappears from the matrix entirely.
+  REQUIRE(repo.revoke_device("deviceB"));
+  CHECK_EQ(count_by_device(repo.wrap_pairs()).count(devB),
+           static_cast<std::size_t>(0));
+}

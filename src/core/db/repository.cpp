@@ -1,5 +1,6 @@
 #include "db/repository.h"
 
+#include <set>
 #include <stdexcept>
 
 namespace pwmgr::db {
@@ -377,6 +378,41 @@ std::vector<std::int64_t> Repository::entry_ids_wrapped_for(
   std::vector<std::int64_t> out;
   out.reserve(r.size());
   for (const auto& row : r) out.push_back(row[0].as<std::int64_t>());
+  return out;
+}
+
+std::vector<WrapPair> Repository::wrap_pairs() {
+  if (!has_device_tables_) return {};
+  pqxx::work txn(conn_);
+  pqxx::result r = txn.exec(
+      "SELECT password_id, device_id FROM password_keys "
+      "ORDER BY password_id ASC, device_id ASC");
+  txn.commit();
+  std::vector<WrapPair> out;
+  out.reserve(r.size());
+  for (const auto& row : r)
+    out.push_back({row[0].as<std::int64_t>(), row[1].as<std::int64_t>()});
+  return out;
+}
+
+std::map<std::int64_t, std::vector<std::int64_t>> wraps_by_entry(
+    const std::vector<WrapPair>& pairs) {
+  // std::set per key: ascending + de-duplicated regardless of input order.
+  std::map<std::int64_t, std::set<std::int64_t>> acc;
+  for (const auto& p : pairs) acc[p.password_id].insert(p.device_id);
+  std::map<std::int64_t, std::vector<std::int64_t>> out;
+  for (auto& [pid, devs] : acc)
+    out.emplace(pid, std::vector<std::int64_t>(devs.begin(), devs.end()));
+  return out;
+}
+
+std::map<std::int64_t, std::int64_t> count_by_device(
+    const std::vector<WrapPair>& pairs) {
+  std::map<std::int64_t, std::set<std::int64_t>> acc;
+  for (const auto& p : pairs) acc[p.device_id].insert(p.password_id);
+  std::map<std::int64_t, std::int64_t> out;
+  for (auto& [dev, ids] : acc)
+    out.emplace(dev, static_cast<std::int64_t>(ids.size()));
   return out;
 }
 

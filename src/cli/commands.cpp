@@ -2,8 +2,10 @@
 
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 
 #include <unistd.h>
 
@@ -25,6 +27,15 @@ bool stdin_is_tty() { return ::isatty(STDIN_FILENO) == 1; }
 
 void progress_line(std::size_t done, std::size_t total, const std::string& what) {
   std::fprintf(stderr, "  [%zu/%zu] %s\n", done, total, what.c_str());
+}
+
+// device_id -> Device*, to turn the wrap matrix's ids into device names.
+// Borrows from `devices`, which must outlive the returned map.
+std::map<std::int64_t, const db::Device*> index_devices(
+    const std::vector<db::Device>& devices) {
+  std::map<std::int64_t, const db::Device*> m;
+  for (const auto& d : devices) m.emplace(d.id, &d);
+  return m;
 }
 
 void print_backup_warning() {
@@ -79,8 +90,12 @@ void print_usage(std::ostream& out) {
          "  (no command)                       interactive menu\n"
          "  migrate                            apply schema migrations incl. "
          "v2 (devices/password_keys)\n"
+         "  status                             devices, entries, per-device "
+         "decryptable coverage + readiness\n"
          "  entry add --note <s>               store a new entry; password "
          "read from STDIN; prints id\n"
+         "  entry list [--porcelain]           every entry + which devices can "
+         "decrypt it\n"
          "  entry show <id>                    print the decrypted password "
          "to stdout\n"
          "  device list [--porcelain]          registered devices "
@@ -162,6 +177,127 @@ int cmd_entry_show(AppContext& ctx, std::int64_t id) {
     return 0;
   } catch (const std::exception& e) {
     std::cerr << "[ERROR] decrypt failed: " << e.what() << "\n";
+    return 1;
+  }
+}
+
+int cmd_entry_list(AppContext& ctx, bool porcelain) {
+  try {
+    const auto notes = ctx.repo->list_notes();
+    const bool migrated = ctx.repo->has_device_tables();
+    const auto devices =
+        migrated ? ctx.repo->list_devices() : std::vector<db::Device>{};
+    const auto idx = index_devices(devices);
+    const auto by_entry =
+        migrated ? db::wraps_by_entry(ctx.repo->wrap_pairs())
+                 : std::map<std::int64_t, std::vector<std::int64_t>>{};
+
+    // Names of the devices that can decrypt entry `id`, ascending by device id.
+    auto names_for = [&](std::int64_t id) {
+      std::vector<std::string> out;
+      if (auto it = by_entry.find(id); it != by_entry.end())
+        for (std::int64_t dev_id : it->second)
+          if (auto d = idx.find(dev_id); d != idx.end())
+            out.push_back(d->second->name);
+      return out;
+    };
+    auto join = [](const std::vector<std::string>& v, const char* sep) {
+      std::string s;
+      for (const auto& x : v) s += (s.empty() ? "" : sep) + x;
+      return s;
+    };
+
+    if (porcelain) {  // id<TAB>ver<TAB>note<TAB>dev1,dev2,...
+      for (const auto& n : notes)
+        std::cout << n.id << "\t" << n.enc_version << "\t" << n.note << "\t"
+                  << join(names_for(n.id), ",") << "\n";
+      return 0;
+    }
+    if (notes.empty()) {
+      std::cout << "(no entries)\n";
+      return 0;
+    }
+    std::cout << "  ID  VER  NOTE                            DECRYPTABLE BY\n";
+    for (const auto& n : notes) {
+      std::string who;
+      if (!migrated)
+        who = "(devices not migrated)";
+      else if (const auto names = names_for(n.id); names.empty())
+        who = "(none)";
+      else
+        who = join(names, ", ");
+      std::printf("  %-3lld v%-3d %-31s %s\n", static_cast<long long>(n.id),
+                  n.enc_version, n.note.c_str(), who.c_str());
+    }
+    return 0;
+  } catch (const std::exception& e) {
+    std::cerr << "[ERROR] " << e.what() << "\n";
+    return 1;
+  }
+}
+
+int cmd_status(AppContext& ctx) {
+  try {
+    const auto notes = ctx.repo->list_notes();
+    const std::int64_t total = static_cast<std::int64_t>(notes.size());
+    int v2 = 0;
+    for (const auto& n : notes)
+      if (n.enc_version >= 2) ++v2;
+
+    const std::string recip = ctx.config->recipient_fingerprint();
+    std::cout << "Recipient: " << recip << "  ("
+              << (crypto::gpg_has_secret_key(recip)
+                      ? "secret key present"
+                      : "NO secret key — cannot decrypt")
+              << ")\n\n";
+
+    if (!ctx.repo->has_device_tables()) {
+      std::cout << "Devices:   tables not migrated — run 'pwmgr migrate'.\n"
+                << "Entries:   " << total << " total (" << v2 << " v2, "
+                << (total - v2) << " v1)\n";
+      return 0;
+    }
+
+    const auto devices = ctx.repo->list_devices();
+    const auto counts = db::count_by_device(ctx.repo->wrap_pairs());
+    int active = 0, revoked = 0;
+    for (const auto& d : devices) {
+      if (d.status == "active")
+        ++active;
+      else
+        ++revoked;
+    }
+
+    std::cout << "Devices (" << active << " active, " << revoked
+              << " revoked):\n"
+              << "  ID  NAME                  STATUS    CAN DECRYPT  "
+                 "FINGERPRINT\n";
+    bool gap = false;  // an active device that cannot decrypt every entry
+    for (const auto& d : devices) {
+      std::int64_t c = 0;
+      if (auto it = counts.find(d.id); it != counts.end()) c = it->second;
+      if (d.status == "active" && c < total) gap = true;
+      std::printf("  %-3lld %-21s %-9s %4lld/%-6lld %s\n",
+                  static_cast<long long>(d.id), d.name.c_str(),
+                  d.status.c_str(), static_cast<long long>(c),
+                  static_cast<long long>(total), d.fingerprint.c_str());
+    }
+
+    std::cout << "\nEntries:   " << total << " total (" << v2 << " v2-GCM, "
+              << (total - v2) << " v1-CBC)\n\n";
+    if (total == 0)
+      std::cout << "Coverage:  no entries yet.\n";
+    else if (active == 0)
+      std::cout << "Coverage:  no active devices.\n";
+    else if (gap)
+      std::cout << "Coverage:  some active devices are missing wraps — run "
+                   "'pwmgr rewrap'. [WARN]\n";
+    else
+      std::cout << "Coverage:  every active device can decrypt every entry. "
+                   "[OK]\n";
+    return 0;
+  } catch (const std::exception& e) {
+    std::cerr << "[ERROR] " << e.what() << "\n";
     return 1;
   }
 }
@@ -414,7 +550,17 @@ int run_command(const std::vector<std::string>& args, AppContext& ctx) {
     if (args.size() != 1) return usage_err("migrate takes no arguments");
     return cmd_migrate(ctx);
   }
+  if (cmd == "status") {
+    if (args.size() != 1) return usage_err("status takes no arguments");
+    return cmd_status(ctx);
+  }
   if (cmd == "entry") {
+    if (args.size() >= 2 && args[1] == "list") {
+      if (args.size() == 2) return cmd_entry_list(ctx, false);
+      if (args.size() == 3 && args[2] == "--porcelain")
+        return cmd_entry_list(ctx, true);
+      return usage_err("entry list: only --porcelain is accepted");
+    }
     if (args.size() >= 2 && args[1] == "add") {
       std::string note;
       for (std::size_t i = 2; i < args.size(); ++i) {
