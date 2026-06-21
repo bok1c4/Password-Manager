@@ -381,6 +381,23 @@ std::vector<std::int64_t> Repository::entry_ids_wrapped_for(
   return out;
 }
 
+std::vector<std::int64_t> Repository::device_ids_for_entry(
+    std::int64_t password_id) {
+  if (!has_device_tables_) return {};
+  pqxx::work txn(conn_);
+  pqxx::result r = txn.exec(
+      "SELECT pk.device_id FROM password_keys pk "
+      "JOIN devices d ON d.id = pk.device_id "
+      "WHERE pk.password_id=$1 AND d.status='active' "
+      "ORDER BY pk.device_id ASC",
+      pqxx::params{password_id});
+  txn.commit();
+  std::vector<std::int64_t> out;
+  out.reserve(r.size());
+  for (const auto& row : r) out.push_back(row[0].as<std::int64_t>());
+  return out;
+}
+
 std::vector<WrapPair> Repository::wrap_pairs() {
   if (!has_device_tables_) return {};
   pqxx::work txn(conn_);

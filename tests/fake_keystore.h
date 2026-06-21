@@ -68,6 +68,18 @@ class InMemoryKeyStore final : public pwmgr::sharing::KeyStore {
     return out;
   }
 
+  std::vector<std::int64_t> device_ids_for_entry(std::int64_t id) override {
+    std::vector<std::int64_t> out;
+    for (const auto& [k, v] : wraps) {
+      if (k.first != id) continue;
+      auto d = devices.find(k.second);
+      if (d != devices.end() && d->second.status == "active")
+        out.push_back(k.second);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+  }
+
   std::string wrapped_key_for(std::int64_t id,
                               std::string_view fingerprint) override {
     const std::string fpr =

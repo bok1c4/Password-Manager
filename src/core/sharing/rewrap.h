@@ -26,6 +26,9 @@ class KeyStore {
   // Sorted ascending (the enroll engine binary-searches it).
   virtual std::vector<std::int64_t> entry_ids_wrapped_for(
       std::int64_t device_id) = 0;
+  // The active devices that currently hold a wrap for this entry (its recipient
+  // set), ascending by id. Lets rotate preserve per-entry membership.
+  virtual std::vector<std::int64_t> device_ids_for_entry(std::int64_t id) = 0;
   // Throws if the entry is gone (repo nullopt -> throw).
   virtual std::string wrapped_key_for(std::int64_t id,
                                       std::string_view fingerprint) = 0;
@@ -57,6 +60,9 @@ class RepositoryKeyStore final : public KeyStore {
   }
   std::vector<std::int64_t> entry_ids_wrapped_for(std::int64_t device_id) override {
     return repo_->entry_ids_wrapped_for(device_id);
+  }
+  std::vector<std::int64_t> device_ids_for_entry(std::int64_t id) override {
+    return repo_->device_ids_for_entry(id);
   }
   std::string wrapped_key_for(std::int64_t id,
                               std::string_view fingerprint) override;
@@ -105,6 +111,21 @@ RewrapStats rewrap_all_to_device(KeyStore& store, const db::Device& target,
                                  std::string_view my_fingerprint,
                                  const ProgressFn& progress = {});
 
+// Per-entry grant: make `target` able to read ONE entry (the single-pair core
+// of rewrap_all_to_device). Idempotent. The operator must currently be able to
+// read the entry (you can only share what you can decrypt). Imports + pins
+// target's key first.
+void grant_entry_to_device(KeyStore& store, std::string_view my_fingerprint,
+                           std::int64_t id, const db::Device& target);
+
+// Rotate ONE entry to EXACTLY `recipients`: fresh K, re-encrypt v2 GCM, wrap to
+// the legacy recipient (lowest-id device in the set) + each recipient, replace
+// the entry's wraps. The single-entry core of rotate_all; per-entry `revoke`
+// calls it with (current set − the removed device). Refuses an empty set (an
+// entry with no readers is unrecoverable). Operator must be able to read it.
+void rotate_entry(KeyStore& store, std::string_view my_fingerprint,
+                  std::int64_t id, std::vector<db::Device> recipients);
+
 // Rotate engine: per entry (one txn each — a crash between entries leaves
 // every entry self-consistent): decrypt, fresh K, re-encrypt as v2 GCM, wrap
 // K to the legacy recipient (D5: founding-if-active else lowest-id active)
@@ -121,5 +142,13 @@ std::int64_t store_new_entry(KeyStore& store, std::string_view my_fingerprint,
                              std::string_view plaintext, std::string_view note);
 void replace_entry_password(KeyStore& store, std::string_view my_fingerprint,
                             std::int64_t id, std::string_view plaintext);
+
+// Subset write path: like store_new_entry but encrypts to a CHOSEN recipient
+// set (group encryption). Legacy aes_key targets the lowest-id device in the
+// set, so a device outside the set genuinely cannot read it (no founding
+// backdoor). An empty set degrades to the legacy-only write (pre-migration).
+std::int64_t store_new_entry_for(KeyStore& store, std::string_view my_fingerprint,
+                                 std::string_view plaintext, std::string_view note,
+                                 std::vector<db::Device> recipients);
 
 }  // namespace pwmgr::sharing

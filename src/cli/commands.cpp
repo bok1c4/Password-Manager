@@ -1,8 +1,10 @@
 #include "commands.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -36,6 +38,45 @@ std::map<std::int64_t, const db::Device*> index_devices(
   std::map<std::int64_t, const db::Device*> m;
   for (const auto& d : devices) m.emplace(d.id, &d);
   return m;
+}
+
+// Resolve one ACTIVE device by name. nullopt (no print) if not found.
+std::optional<db::Device> resolve_active_device(AppContext& ctx,
+                                                const std::string& name) {
+  for (const auto& d : ctx.repo->active_devices())
+    if (d.name == name) return d;
+  return std::nullopt;
+}
+
+// Resolve a comma-separated list of ACTIVE device names to Device objects
+// (de-duplicated). Returns false and prints the first unknown name.
+bool resolve_active_devices(AppContext& ctx, const std::string& csv,
+                            std::vector<db::Device>& out) {
+  const auto active = ctx.repo->active_devices();
+  std::stringstream ss(csv);
+  std::string tok;
+  while (std::getline(ss, tok, ',')) {
+    const auto b = tok.find_first_not_of(" \t");
+    if (b == std::string::npos) continue;  // skip blank tokens
+    const auto e = tok.find_last_not_of(" \t");
+    const std::string name = tok.substr(b, e - b + 1);
+    auto it = std::find_if(active.begin(), active.end(),
+                           [&](const db::Device& d) { return d.name == name; });
+    if (it == active.end()) {
+      std::cerr << "[ERROR] no active device named '" << name
+                << "' (see 'pwmgr device list')\n";
+      return false;
+    }
+    if (std::none_of(out.begin(), out.end(), [&](const db::Device& d) {
+          return d.id == it->id;
+        }))
+      out.push_back(*it);
+  }
+  if (out.empty()) {
+    std::cerr << "[ERROR] --devices listed no known device\n";
+    return false;
+  }
+  return true;
 }
 
 void print_backup_warning() {
@@ -92,12 +133,17 @@ void print_usage(std::ostream& out) {
          "v2 (devices/password_keys)\n"
          "  status                             devices, entries, per-device "
          "decryptable coverage + readiness\n"
-         "  entry add --note <s>               store a new entry; password "
-         "read from STDIN; prints id\n"
+         "  entry add --note <s> [--devices a,b,c]\n"
+         "                                     store a new entry from STDIN "
+         "(default: all active devices); prints id\n"
          "  entry list [--porcelain]           every entry + which devices can "
          "decrypt it\n"
          "  entry show <id>                    print the decrypted password "
          "to stdout\n"
+         "  entry grant <id> <device>          give a device access to one "
+         "entry\n"
+         "  entry revoke <id> <device>         remove a device from one entry "
+         "(rotates that entry)\n"
          "  device list [--porcelain]          registered devices "
          "(porcelain: name<TAB>fpr<TAB>status)\n"
          "  device add <name> <pubkey.asc> --fpr <40hex>\n"
@@ -142,21 +188,107 @@ int cmd_migrate(AppContext& ctx) {
   return 0;
 }
 
-int cmd_entry_add(AppContext& ctx, const std::string& note) {
+int cmd_entry_add(AppContext& ctx, const std::string& note,
+                  const std::string& devices_csv) {
+  // Resolve the recipient subset BEFORE consuming stdin, so a bad name fails
+  // fast without swallowing the password.
+  std::vector<db::Device> recipients;
+  const bool subset = !devices_csv.empty();
+  if (subset && !resolve_active_devices(ctx, devices_csv, recipients)) return 2;
+
   std::string password;
   if (!std::getline(std::cin, password) || password.empty()) {
     std::cerr << "[ERROR] entry add: expected the password on stdin\n";
     return 2;
   }
   try {
-    std::int64_t id = sharing::store_new_entry(
-        *ctx.keys, ctx.config->recipient_fingerprint(), password, note);
+    const std::string& fpr = ctx.config->recipient_fingerprint();
+    std::int64_t id =
+        subset ? sharing::store_new_entry_for(*ctx.keys, fpr, password, note,
+                                              recipients)
+               : sharing::store_new_entry(*ctx.keys, fpr, password, note);
     OPENSSL_cleanse(password.data(), password.size());
     std::cout << id << "\n";  // the id is the whole stdout contract
     return 0;
   } catch (const std::exception& e) {
     OPENSSL_cleanse(password.data(), password.size());
     std::cerr << "[ERROR] save failed: " << e.what() << "\n";
+    return 1;
+  }
+}
+
+int cmd_entry_grant(AppContext& ctx, std::int64_t id, const std::string& device) {
+  if (!ctx.repo->has_device_tables()) {
+    std::cerr << "[ERROR] device tables not migrated — run 'pwmgr migrate'\n";
+    return 1;
+  }
+  if (!ctx.repo->get_entry(id)) {
+    std::cerr << "[ERROR] entry " << id << " not found\n";
+    return 1;
+  }
+  auto dev = resolve_active_device(ctx, device);
+  if (!dev) {
+    std::cerr << "[ERROR] no active device named '" << device << "'\n";
+    return 1;
+  }
+  try {
+    sharing::grant_entry_to_device(*ctx.keys,
+                                   ctx.config->recipient_fingerprint(), id, *dev);
+    std::cerr << "[OK] entry " << id << " is now decryptable by '" << device
+              << "'\n";
+    return 0;
+  } catch (const std::exception& e) {
+    std::cerr << "[ERROR] grant failed: " << e.what() << "\n"
+              << "        (you can only share an entry this device can "
+                 "decrypt)\n";
+    return 1;
+  }
+}
+
+int cmd_entry_revoke(AppContext& ctx, std::int64_t id,
+                     const std::string& device) {
+  if (!ctx.repo->has_device_tables()) {
+    std::cerr << "[ERROR] device tables not migrated — run 'pwmgr migrate'\n";
+    return 1;
+  }
+  if (!ctx.repo->get_entry(id)) {
+    std::cerr << "[ERROR] entry " << id << " not found\n";
+    return 1;
+  }
+  // Build the remaining recipient set (current members minus `device`).
+  const auto active = ctx.repo->active_devices();  // named: idx borrows from it
+  const auto idx = index_devices(active);
+  std::vector<db::Device> remaining;
+  bool was_member = false;
+  for (std::int64_t did : ctx.repo->device_ids_for_entry(id)) {
+    auto it = idx.find(did);
+    if (it == idx.end()) continue;
+    if (it->second->name == device) {
+      was_member = true;
+      continue;
+    }
+    remaining.push_back(*it->second);
+  }
+  if (!was_member) {
+    std::cerr << "[ERROR] '" << device << "' is not a current reader of entry "
+              << id << "\n";
+    return 1;
+  }
+  if (remaining.empty()) {
+    std::cerr << "[ERROR] '" << device << "' is the only reader of entry " << id
+              << " — removing it would orphan the entry.\n"
+              << "        Grant another device first ('pwmgr entry grant " << id
+              << " <device>').\n";
+    return 2;
+  }
+  try {
+    sharing::rotate_entry(*ctx.keys, ctx.config->recipient_fingerprint(), id,
+                          remaining);
+    std::cerr << "[OK] entry " << id << " rotated; '" << device
+              << "' removed (its cached copy is now stale).\n";
+    return 0;
+  } catch (const std::exception& e) {
+    std::cerr << "[ERROR] revoke failed: " << e.what() << "\n";
     return 1;
   }
 }
@@ -562,16 +694,18 @@ int run_command(const std::vector<std::string>& args, AppContext& ctx) {
       return usage_err("entry list: only --porcelain is accepted");
     }
     if (args.size() >= 2 && args[1] == "add") {
-      std::string note;
+      std::string note, devices;
       for (std::size_t i = 2; i < args.size(); ++i) {
         if (args[i] == "--note" && i + 1 < args.size()) {
           note = args[++i];
+        } else if (args[i] == "--devices" && i + 1 < args.size()) {
+          devices = args[++i];
         } else {
           return usage_err("entry add: unexpected argument '" + args[i] + "'");
         }
       }
       if (note.empty()) return usage_err("entry add requires --note <s>");
-      return cmd_entry_add(ctx, note);
+      return cmd_entry_add(ctx, note, devices);
     }
     if (args.size() == 3 && args[1] == "show") {
       try {
@@ -579,6 +713,16 @@ int run_command(const std::vector<std::string>& args, AppContext& ctx) {
       } catch (const std::exception&) {
         return usage_err("entry show: numeric id required");
       }
+    }
+    if (args.size() == 4 && (args[1] == "grant" || args[1] == "revoke")) {
+      std::int64_t id;
+      try {
+        id = std::stoll(args[2]);
+      } catch (const std::exception&) {
+        return usage_err("entry " + args[1] + " <id> <device>: numeric id");
+      }
+      return args[1] == "grant" ? cmd_entry_grant(ctx, id, args[3])
+                                : cmd_entry_revoke(ctx, id, args[3]);
     }
     return usage_err("unknown entry subcommand");
   }

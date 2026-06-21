@@ -10,7 +10,10 @@ PKG_CFLAGS = $(shell pkg-config --cflags libpqxx libpq gpgme)
 PKG_LIBS   = $(shell pkg-config --libs libpqxx libpq gpgme)
 SSL_LIBS   = -lcrypto
 
-CXXFLAGS  = $(CXXSTD) $(WARN) -g -O0 $(INCLUDES) $(PKG_CFLAGS)
+# -MMD -MP emits per-object .d files so header edits trigger the right
+# recompiles. Without this, changing a .h (e.g. a KeyStore vtable layout) leaves
+# stale .o files linked against the old layout and silently miscompiles.
+CXXFLAGS  = $(CXXSTD) $(WARN) -g -O0 $(INCLUDES) $(PKG_CFLAGS) -MMD -MP
 LDLIBS    = $(PKG_LIBS) $(SSL_LIBS)
 
 CORE_SRC  = $(wildcard src/core/*/*.cpp)
@@ -32,6 +35,9 @@ $(BUILD)/pwmgr_tests: $(CORE_OBJ) $(TEST_OBJ)
 $(BUILD)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# Pull in the generated header-dependency files (.d) when present.
+-include $(CORE_OBJ:.o=.d) $(CLI_OBJ:.o=.d) $(TEST_OBJ:.o=.d)
 
 test: $(BUILD)/pwmgr_tests
 	$(BUILD)/pwmgr_tests --no-gated

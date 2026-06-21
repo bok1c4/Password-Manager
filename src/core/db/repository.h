@@ -86,6 +86,10 @@ class Repository {
   std::vector<std::int64_t> all_entry_ids();  // passwords.id ASC
   // Sorted (the enroll engine binary-searches it).
   std::vector<std::int64_t> entry_ids_wrapped_for(std::int64_t device_id);
+  // The ACTIVE devices that currently hold a wrap for this entry (its recipient
+  // set), ascending by device id. Empty pre-migration. Lets rotate/edit
+  // preserve per-entry group membership.
+  std::vector<std::int64_t> device_ids_for_entry(std::int64_t password_id);
   // The WHOLE access matrix in one query: every (password_id, device_id) in
   // password_keys, ascending by (password_id, device_id). The CMS pivots it
   // both ways (per-entry devices, per-device counts). Empty pre-migration.

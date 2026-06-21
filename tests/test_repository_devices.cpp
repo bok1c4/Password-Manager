@@ -265,6 +265,10 @@ TEST_CASE_GATED("devices: wrap_pairs feeds the CMS access matrix") {
     auto by_entry = wraps_by_entry(pairs);
     REQUIRE(by_entry[1].size() == static_cast<std::size_t>(1));
     CHECK_EQ(by_entry[1][0], fa->id);
+    // device_ids_for_entry: the per-entry recipient set (the rotate/edit path).
+    auto recips = repo.device_ids_for_entry(1);
+    REQUIRE(recips.size() == static_cast<std::size_t>(1));
+    CHECK_EQ(recips[0], fa->id);
   }
 
   // Wrap entry 1 to B -> matrix gains exactly that cell, ascending by id.
@@ -275,10 +279,16 @@ TEST_CASE_GATED("devices: wrap_pairs feeds the CMS access matrix") {
     CHECK_EQ(by_entry[1][0], fa->id);
     CHECK_EQ(by_entry[1][1], devB);
     CHECK_EQ(count_by_device(repo.wrap_pairs())[devB], static_cast<std::int64_t>(1));
+    auto recips = repo.device_ids_for_entry(1);  // now {A, B}, ascending
+    REQUIRE(recips.size() == static_cast<std::size_t>(2));
+    CHECK_EQ(recips[0], fa->id);
+    CHECK_EQ(recips[1], devB);
   }
 
-  // Revoking B deletes its wraps -> it disappears from the matrix entirely.
+  // Revoking B deletes its wraps -> it disappears from the matrix entirely,
+  // and from each entry's active recipient set.
   REQUIRE(repo.revoke_device("deviceB"));
   CHECK_EQ(count_by_device(repo.wrap_pairs()).count(devB),
            static_cast<std::size_t>(0));
+  CHECK_EQ(repo.device_ids_for_entry(1).size(), static_cast<std::size_t>(1));
 }

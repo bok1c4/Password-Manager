@@ -191,6 +191,144 @@ TEST_CASE("write path wraps to all active devices + legacy aes_key") {
   CHECK_EQ(decrypt_via(store, id, fprB), std::string("new-pt"));
 }
 
+// ---- group encryption (per-entry recipient sets) ----
+// NOTE: one shared test keyring holds every device's secret, so we assert on
+// the access MATRIX (who holds a wrap) rather than on decrypt-failure for an
+// excluded device — crypto-level exclusion is guaranteed by GPG and covered by
+// the existing rotate test. This mirrors the fallback note in the write-path
+// test above.
+
+TEST_CASE("subset create: entry encrypted to a chosen device set only") {
+  tf::EphemeralKeyring ring;
+  const std::string fprA = ring.gen_key("deviceA");
+  const std::string fprB = ring.gen_key("deviceB");
+  const std::string fprC = ring.gen_key("deviceC");
+  tf::InMemoryKeyStore store;
+  auto a = store.seed_device("deviceA", fprA, crypto::gpg_export_public_key(fprA));
+  auto b = store.seed_device("deviceB", fprB, crypto::gpg_export_public_key(fprB));
+  auto c = store.seed_device("deviceC", fprC, crypto::gpg_export_public_key(fprC));
+
+  std::int64_t id = sharing::store_new_entry_for(
+      store, fprA, "group-secret", "shared",
+      {store.devices[a], store.devices[b]});  // exclude C
+  CHECK_EQ(store.wrap_count_for(a), static_cast<std::size_t>(1));
+  CHECK_EQ(store.wrap_count_for(b), static_cast<std::size_t>(1));
+  CHECK_EQ(store.wrap_count_for(c), static_cast<std::size_t>(0));  // C excluded
+  auto m = store.device_ids_for_entry(id);
+  REQUIRE(m.size() == static_cast<std::size_t>(2));
+  CHECK_EQ(m[0], a);
+  CHECK_EQ(m[1], b);
+  CHECK_EQ(decrypt_via(store, id, fprA), std::string("group-secret"));
+  CHECK_EQ(decrypt_via(store, id, fprB), std::string("group-secret"));
+}
+
+TEST_CASE("group encryption can exclude the founding device (no backdoor)") {
+  tf::EphemeralKeyring ring;
+  const std::string fprA = ring.gen_key("deviceA");  // founding (lowest id)
+  const std::string fprB = ring.gen_key("deviceB");
+  const std::string fprC = ring.gen_key("deviceC");
+  tf::InMemoryKeyStore store;
+  auto a = store.seed_device("deviceA", fprA, crypto::gpg_export_public_key(fprA));
+  auto b = store.seed_device("deviceB", fprB, crypto::gpg_export_public_key(fprB));
+  auto c = store.seed_device("deviceC", fprC, crypto::gpg_export_public_key(fprC));
+
+  std::int64_t id = sharing::store_new_entry_for(
+      store, fprA, "for-b-and-c-only", "secret",
+      {store.devices[b], store.devices[c]});  // exclude founding A
+  // Founding A holds NO wrap row: it is not in the recipient set. The legacy
+  // aes_key targets the lowest-id MEMBER (B), so the fallback is not a wrap to
+  // A — A genuinely cannot read it.
+  CHECK_EQ(store.wrap_count_for(a), static_cast<std::size_t>(0));
+  auto m = store.device_ids_for_entry(id);
+  REQUIRE(m.size() == static_cast<std::size_t>(2));
+  CHECK_EQ(m[0], b);
+  CHECK_EQ(m[1], c);
+}
+
+TEST_CASE("entry grant: one device gains access to a single entry") {
+  tf::EphemeralKeyring ring;
+  const std::string fprA = ring.gen_key("deviceA");
+  const std::string fprB = ring.gen_key("deviceB");
+  tf::InMemoryKeyStore store;
+  auto a = store.seed_device("deviceA", fprA, crypto::gpg_export_public_key(fprA));
+  auto b = store.seed_device("deviceB", fprB, crypto::gpg_export_public_key(fprB));
+
+  // Two entries shared with A only.
+  std::int64_t id1 = sharing::store_new_entry_for(store, fprA, "s1", "n1",
+                                                  {store.devices[a]});
+  std::int64_t id2 = sharing::store_new_entry_for(store, fprA, "s2", "n2",
+                                                  {store.devices[a]});
+  CHECK_EQ(store.wrap_count_for(b), static_cast<std::size_t>(0));
+
+  sharing::grant_entry_to_device(store, fprA, id1, store.devices[b]);
+  // B reads id1; the grant is per-entry, so id2 still excludes B.
+  CHECK_EQ(decrypt_via(store, id1, fprB), std::string("s1"));
+  CHECK_EQ(store.device_ids_for_entry(id1).size(), static_cast<std::size_t>(2));
+  auto m2 = store.device_ids_for_entry(id2);
+  REQUIRE(m2.size() == static_cast<std::size_t>(1));
+  CHECK_EQ(m2[0], a);
+}
+
+TEST_CASE("entry revoke rotates that entry and drops the device") {
+  tf::EphemeralKeyring ring;
+  const std::string fprA = ring.gen_key("deviceA");
+  const std::string fprB = ring.gen_key("deviceB");
+  tf::InMemoryKeyStore store;
+  auto a = store.seed_device("deviceA", fprA, crypto::gpg_export_public_key(fprA));
+  auto b = store.seed_device("deviceB", fprB, crypto::gpg_export_public_key(fprB));
+
+  std::int64_t id = sharing::store_new_entry_for(
+      store, fprA, "shared-secret", "n", {store.devices[a], store.devices[b]});
+  const std::string old_blob = store.get_entry(id).password_blob;
+  const std::string b_wrap_before = store.wraps[{id, b}];  // B's current wrap
+
+  // Remove B: rotate the entry to {A}.
+  sharing::rotate_entry(store, fprA, id, {store.devices[a]});
+  CHECK_EQ(store.wrap_count_for(b), static_cast<std::size_t>(0));  // B dropped
+  auto m = store.device_ids_for_entry(id);
+  REQUIRE(m.size() == static_cast<std::size_t>(1));
+  CHECK_EQ(m[0], a);
+  CHECK_EQ(decrypt_via(store, id, fprA), std::string("shared-secret"));
+
+  // Real revoke: fresh K. The blob changed, and B's OLD key cannot open it.
+  const std::string new_blob = store.get_entry(id).password_blob;
+  CHECK(new_blob != old_blob);
+  std::string old_k = crypto::gpg_decrypt(b_wrap_before);  // 32 bytes (ring has B)
+  auto parsed = crypto::parse_password_blob(new_blob);
+  REQUIRE(parsed.version == crypto::Version::V2_Gcm);
+  std::vector<unsigned char> kv(old_k.begin(), old_k.end());
+  CHECK_THROWS(crypto::aes256_gcm_decrypt(parsed.payload, kv));
+
+  // Removing the last reader is refused (would orphan the entry).
+  CHECK_THROWS(sharing::rotate_entry(store, fprA, id, {}));
+}
+
+TEST_CASE("rotate_all preserves per-entry membership (no grant-all)") {
+  tf::EphemeralKeyring ring;
+  const std::string fprA = ring.gen_key("deviceA");
+  const std::string fprB = ring.gen_key("deviceB");
+  const std::string fprC = ring.gen_key("deviceC");
+  tf::InMemoryKeyStore store;
+  auto a = store.seed_device("deviceA", fprA, crypto::gpg_export_public_key(fprA));
+  auto b = store.seed_device("deviceB", fprB, crypto::gpg_export_public_key(fprB));
+  auto c = store.seed_device("deviceC", fprC, crypto::gpg_export_public_key(fprC));
+
+  std::int64_t id1 = sharing::store_new_entry_for(
+      store, fprA, "g1", "n1", {store.devices[a], store.devices[b]});  // not C
+  std::int64_t id2 = sharing::store_new_entry(store, fprA, "g2", "n2");  // all 3
+
+  sharing::rotate_all(store, fprA);
+
+  // id1 still excludes C; id2 still has all three. A global rotate must not
+  // widen any entry's recipient set.
+  auto m1 = store.device_ids_for_entry(id1);
+  CHECK_EQ(m1.size(), static_cast<std::size_t>(2));
+  CHECK(std::find(m1.begin(), m1.end(), c) == m1.end());
+  CHECK_EQ(store.device_ids_for_entry(id2).size(), static_cast<std::size_t>(3));
+  CHECK_EQ(decrypt_via(store, id1, fprA), std::string("g1"));
+  CHECK_EQ(decrypt_via(store, id2, fprC), std::string("g2"));
+}
+
 TEST_CASE("ensure_device_keys_local pins stored keys against fingerprints") {
   tf::EphemeralKeyring ring;
   const std::string fprA = ring.gen_key("deviceA");
